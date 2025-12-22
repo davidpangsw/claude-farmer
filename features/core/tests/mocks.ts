@@ -1,0 +1,121 @@
+/**
+ * Mock implementations for testing.
+ */
+
+import type { FileSystem, AIModel, FeatureContext, FileEdit, SummaryFile } from "../types.js";
+
+/**
+ * In-memory file system mock for testing.
+ */
+export class MockFileSystem implements FileSystem {
+  private files: Map<string, string> = new Map();
+  private directories: Set<string> = new Set();
+
+  constructor(initialFiles?: Record<string, string>) {
+    if (initialFiles) {
+      for (const [path, content] of Object.entries(initialFiles)) {
+        this.files.set(path, content);
+      }
+    }
+  }
+
+  async readFile(path: string): Promise<string> {
+    const content = this.files.get(path);
+    if (content === undefined) {
+      throw new Error(`File not found: ${path}`);
+    }
+    return content;
+  }
+
+  async writeFile(path: string, content: string): Promise<void> {
+    this.files.set(path, content);
+  }
+
+  async exists(path: string): Promise<boolean> {
+    return this.files.has(path) || this.directories.has(path);
+  }
+
+  async listFiles(directory: string, pattern?: string): Promise<string[]> {
+    const results: string[] = [];
+    for (const path of this.files.keys()) {
+      if (path.startsWith(directory)) {
+        if (!pattern || pattern === "**/*.ts") {
+          if (path.endsWith(".ts")) {
+            results.push(path);
+          }
+        } else {
+          results.push(path);
+        }
+      }
+    }
+    return results;
+  }
+
+  async mkdir(path: string): Promise<void> {
+    this.directories.add(path);
+  }
+
+  // Test helper methods
+  getFile(path: string): string | undefined {
+    return this.files.get(path);
+  }
+
+  getAllFiles(): Map<string, string> {
+    return new Map(this.files);
+  }
+}
+
+/**
+ * Mock AI model for testing.
+ */
+export class MockAIModel implements AIModel {
+  private researchResponse: string;
+  private reviewResponse: string;
+  private editsResponse: FileEdit[];
+  private summaryResponse: SummaryFile[];
+
+  constructor(
+    reviewResponse: string = "# Review\n\nNo suggestions.",
+    editsResponse: FileEdit[] = [],
+    researchResponse: string = "# Research\n\nNo findings.",
+    summaryResponse: SummaryFile[] = []
+  ) {
+    this.researchResponse = researchResponse;
+    this.reviewResponse = reviewResponse;
+    this.editsResponse = editsResponse;
+    this.summaryResponse = summaryResponse;
+  }
+
+  async generateResearch(context: FeatureContext): Promise<string> {
+    return this.researchResponse;
+  }
+
+  async generateReview(context: FeatureContext): Promise<string> {
+    return this.reviewResponse;
+  }
+
+  async generateEdits(context: FeatureContext): Promise<FileEdit[]> {
+    return this.editsResponse;
+  }
+
+  async generateSummary(context: FeatureContext): Promise<SummaryFile[]> {
+    return this.summaryResponse;
+  }
+
+  // Test helper methods
+  setResearchResponse(response: string): void {
+    this.researchResponse = response;
+  }
+
+  setReviewResponse(response: string): void {
+    this.reviewResponse = response;
+  }
+
+  setEditsResponse(edits: FileEdit[]): void {
+    this.editsResponse = edits;
+  }
+
+  setSummaryResponse(files: SummaryFile[]): void {
+    this.summaryResponse = files;
+  }
+}
