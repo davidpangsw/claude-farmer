@@ -104,9 +104,9 @@ async function runPatch(
   ai: ClaudeCodeAI,
   loop: boolean
 ): Promise<void> {
-  const commandsDir = join(projectRoot, "features", "core", "commands");
-  const checkoutScript = join(commandsDir, "git-patch-checkout.sh");
-  const completeScript = join(commandsDir, "git-patch-complete.sh");
+  const scriptsDir = join(projectRoot, "features", "core", "scripts");
+  const checkoutScript = join(scriptsDir, "git-patch-checkout.sh");
+  const completeScript = join(scriptsDir, "git-patch-complete.sh");
 
   const maxIterations = loop ? 10 : 1;
   let iterations = 0;
