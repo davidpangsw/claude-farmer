@@ -1,10 +1,11 @@
-Web search isn't available. I'll proceed with the review based on my analysis.
+I need permission to write the review file. Here's the review:
 
-```markdown
+---
+
 # Review
 
 ## Summary
-Implementation is solid; previous review items partially addressed. Missing git scripts remain the critical blocker.
+Git scripts exist; critical gaps are real-time logging (currently buffered) and missing exponential backoff.
 
 ## Goal Alignment
 - [x] Review task: reads GOAL, source → produces REVIEW.md
@@ -12,52 +13,35 @@ Implementation is solid; previous review items partially addressed. Missing git 
 - [x] Patch command: orchestrates review → develop → commit loop
 - [x] Tasks not exposed: only commands exported in index.ts
 - [x] Logging with rotation (100 files max)
-- [x] --once flag and loop mode with exponential backoff mentioned in GOAL (not implemented)
-- [ ] Git scripts: `git-patch-checkout.sh` and `git-patch-complete.sh` missing
-- [ ] Exponential backoff sleep: GOAL specifies 1→2→4→8 min up to 24h, not implemented
+- [x] Git scripts exist
+- [ ] **Real-time logging**: GOAL says "MUST BE delivered IN REAL TIME", but `logging/index.ts` buffers in memory and writes only at `finalize()`
+- [ ] **Exponential backoff**: GOAL specifies 1→2→4→8 min up to 24h, not implemented
 - [ ] File patterns: hardcoded `**/*.ts` excludes `.tsx`, `.js`, `.json`, `.md`
 
 ## Suggestions
 
 ### High Priority
-1. **Create missing git scripts** (`commands/patch/index.ts:56-57`)
-   - `scripts/git-patch-checkout.sh`: create/checkout work branch, stash changes
-   - `scripts/git-patch-complete.sh`: stage all, commit with message from stdin or default
-   - Without these, `patch` command will throw `ENOENT`
+1. **Implement real-time logging** (`logging/index.ts:46-60`)
+   - Current: all logs buffered in `this.lines[]`, written at `finalize()`
+   - Required: write each log line immediately to file
+   - Solution: open file stream on construction, append on each `log()` call
 
-2. **Implement exponential backoff sleep** (`commands/patch/index.ts`)
-   - GOAL.md specifies: "Sleep for 1 minute, 2 minute, 4 minute, 8 minutes ..., (maxed at 24 hour.)"
-   - Currently loop exits immediately when no edits found
-   - Add sleep with doubling interval when `developResult.edits.length === 0`
+2. **Implement exponential backoff** (`commands/patch/index.ts:75-77`)
+   - Current: loop exits when `developResult.edits.length === 0`
+   - Required: sleep 1→2→4→8 min... up to 24h, then retry
+   - Add: `sleepMs` variable, double on no-edits, cap at 86400000ms
 
 ### Medium Priority
 1. **Make source file patterns configurable** (`context.ts:36`)
-   - Hardcoded `**/*.ts` misses `.tsx`, `.js`, `.mjs`, `.json`, `.md`
-   - Option: detect from `tsconfig.json` include/exclude or accept as option
-
-2. **Specify absolute paths in DEVELOP_PROMPT** (`claude/index.ts:70`)
-   - Prompt shows `{"path": "...", "content": "..."}`
-   - AI may return relative paths; clarify: "Use absolute paths matching source file paths above"
-
-3. **Capture git script output to logs** (`commands/patch/index.ts:35-41`)
-   - `stdio: "inherit"` bypasses logger
-   - Change to capture stdout/stderr and log them
-
-4. **Add default timeout** (`claude/types.ts`)
-   - No default timeout; long AI calls hang indefinitely
-   - Recommend: 10-minute default in `ClaudeCodeAI` constructor
+2. **git-patch-checkout.sh is a no-op** - just prints "ready"
+3. **Commit message not passed to git script** (`commands/patch/index.ts:72-73`)
+4. **Capture git script output to logs** instead of `stdio: "inherit"`
 
 ### Low Priority
-1. **Add integration test for patch command**
-   - Current tests mock `execSync`, don't test real git workflow
-   - Add smoke test with temp git repo
-
-2. **Handle empty source files gracefully** (`context.ts:38-43`)
-   - If working directory has no `.ts` files, `sourceFiles` is empty
-   - Consider warning in logs or review output
+1. Add integration test with real git repo
+2. Add default timeout for AI calls
 
 ## Next Steps
-1. Create `scripts/git-patch-checkout.sh` and `scripts/git-patch-complete.sh`
-2. Implement exponential backoff sleep in patch loop when no edits
-3. Add file extension configuration or auto-detection
-```
+1. Refactor `logging/index.ts` to write in real-time
+2. Add exponential backoff sleep in patch loop
+3. Pass meaningful commit message to git-patch-complete.sh

@@ -88,6 +88,7 @@ Commands:
 
 Options:
   --once               Run once instead of looping (default: loop forever)
+  --ultrathink         Enable extended thinking mode (default: off)
   --help               Show this help message
 
 Examples:
@@ -208,6 +209,7 @@ async function main(): Promise<void> {
   }
 
   const once = args.includes("--once");
+  const ultrathink = args.includes("--ultrathink");
   const loop = !once; // Default is loop forever
 
   // Resolve working directory (default to current directory)
@@ -220,12 +222,12 @@ async function main(): Promise<void> {
 
   const ai = new ClaudeCodeAI({
     cwd: workingDir,
-    ultrathink: true,
+    ultrathink,
   });
 
   console.log(`Claude Farmer - Patch command`);
   console.log(`Working directory: ${workingDir}`);
-  console.log(`Mode: ${loop ? "loop" : "once"}`);
+  console.log(`Mode: ${loop ? "loop" : "once"}${ultrathink ? ", ultrathink" : ""}`);
 
   try {
     await runPatch(workingDir, projectRoot, fs, ai, loop);

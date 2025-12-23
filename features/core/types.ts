@@ -53,6 +53,7 @@ export interface DevelopResult {
 export interface FileSystem {
   readFile(path: string): Promise<string>;
   writeFile(path: string, content: string): Promise<void>;
+  appendFile(path: string, content: string): Promise<void>;
   exists(path: string): Promise<boolean>;
   listFiles(directory: string, pattern?: string): Promise<string[]>;
   mkdir(path: string): Promise<void>;
@@ -76,4 +77,3 @@ export interface AIModel {
    */
   generateEdits(context: WorkingDirContext): Promise<FileEdit[]>;
 }
-

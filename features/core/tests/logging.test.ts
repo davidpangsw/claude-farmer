@@ -48,7 +48,7 @@ describe("IterationLogger", () => {
     const fs = new MockFileSystem({});
     const logger = createIterationLogger("/project", fs, 1);
 
-    logger.logReview("/project/claude-farmer/docs/REVIEW.md", 500);
+    await logger.logReview("/project/claude-farmer/docs/REVIEW.md", 500);
     await logger.finalize();
 
     const allFiles = fs.getAllFiles();
@@ -61,7 +61,7 @@ describe("IterationLogger", () => {
     const fs = new MockFileSystem({});
     const logger = createIterationLogger("/project", fs, 1);
 
-    logger.logDevelop([
+    await logger.logDevelop([
       { path: "/project/src/a.ts", content: "abc" },
       { path: "/project/src/b.ts", content: "defgh" },
     ]);
@@ -78,7 +78,7 @@ describe("IterationLogger", () => {
     const fs = new MockFileSystem({});
     const logger = createIterationLogger("/project", fs, 1);
 
-    logger.logCommit("Added new feature");
+    await logger.logCommit("Added new feature");
     await logger.finalize();
 
     const allFiles = fs.getAllFiles();
@@ -90,7 +90,7 @@ describe("IterationLogger", () => {
     const fs = new MockFileSystem({});
     const logger = createIterationLogger("/project", fs, 1);
 
-    logger.logNoChanges();
+    await logger.logNoChanges();
     await logger.finalize();
 
     const allFiles = fs.getAllFiles();
@@ -102,12 +102,47 @@ describe("IterationLogger", () => {
     const fs = new MockFileSystem({});
     const logger = createIterationLogger("/project", fs, 1);
 
-    logger.logError("Something went wrong");
+    await logger.logError("Something went wrong");
     await logger.finalize();
 
     const allFiles = fs.getAllFiles();
     const logContent = Array.from(allFiles.values())[0];
     expect(logContent).toContain("ERROR: Something went wrong");
+  });
+
+  it("logs sleep/backoff events", async () => {
+    const fs = new MockFileSystem({});
+    const logger = createIterationLogger("/project", fs, 1);
+
+    await logger.logSleep(60000); // 1 minute
+    await logger.logSleep(120000); // 2 minutes
+    await logger.finalize();
+
+    const allFiles = fs.getAllFiles();
+    const logContent = Array.from(allFiles.values())[0];
+    expect(logContent).toContain("Sleeping for 1 minute(s)");
+    expect(logContent).toContain("Sleeping for 2 minute(s)");
+  });
+
+  it("writes logs in real-time (each log call writes immediately)", async () => {
+    const fs = new MockFileSystem({});
+    const logger = createIterationLogger("/project", fs, 1);
+
+    // After first log, file should exist and contain that message
+    await logger.log("First message");
+    
+    const allFiles = fs.getAllFiles();
+    const logFiles = Array.from(allFiles.entries()).filter(([p]) =>
+      p.includes("claude-farmer/logs/")
+    );
+    expect(logFiles.length).toBe(1);
+    expect(logFiles[0][1]).toContain("First message");
+
+    // After second log, file should contain both messages
+    await logger.log("Second message");
+    const updatedContent = fs.getFile(logFiles[0][0]);
+    expect(updatedContent).toContain("First message");
+    expect(updatedContent).toContain("Second message");
   });
 });
 

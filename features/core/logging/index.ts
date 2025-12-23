@@ -3,6 +3,8 @@
  *
  * Creates timestamped log files in `<working_dir>/claude-farmer/logs/`
  * and maintains rotation to keep only the last 100 iterations.
+ *
+ * Logs are written IN REAL TIME - each log line is immediately appended to the file.
  */
 
 import { join } from "path";
@@ -27,10 +29,12 @@ function getTimestamp(): string {
 
 /**
  * Logger for a single iteration.
+ * Writes logs in real-time - each log call immediately appends to the file.
  */
 export class IterationLogger {
-  private lines: string[] = [];
+  private logPath: string;
   private startTime: Date;
+  private initialized: boolean = false;
 
   constructor(
     private workingDirPath: string,
@@ -38,77 +42,99 @@ export class IterationLogger {
     private iteration: number
   ) {
     this.startTime = new Date();
-    this.log(`=== Iteration ${iteration} started at ${this.startTime.toISOString()} ===`);
+    const timestamp = getTimestamp();
+    this.logPath = join(this.workingDirPath, LOGS_DIR, `${timestamp}.log`);
   }
 
   /**
-   * Logs a message with timestamp.
+   * Ensures the log file is initialized (creates directory and file).
    */
-  log(message: string): void {
+  private async ensureInitialized(): Promise<void> {
+    if (this.initialized) return;
+
+    const logsDir = join(this.workingDirPath, LOGS_DIR);
+    await this.fs.mkdir(logsDir);
+
+    // Write initial message
+    const timestamp = this.startTime.toISOString();
+    const message = `[${timestamp}] === Iteration ${this.iteration} started at ${timestamp} ===\n`;
+    await this.fs.writeFile(this.logPath, message);
+
+    this.initialized = true;
+  }
+
+  /**
+   * Logs a message with timestamp. Writes immediately to file.
+   */
+  async log(message: string): Promise<void> {
+    await this.ensureInitialized();
     const timestamp = new Date().toISOString();
-    this.lines.push(`[${timestamp}] ${message}`);
+    const line = `[${timestamp}] ${message}\n`;
+    await this.fs.appendFile(this.logPath, line);
   }
 
   /**
    * Logs the review task completion.
    */
-  logReview(reviewPath: string, contentLength: number): void {
-    this.log(`Review completed: ${reviewPath} (${contentLength} chars)`);
+  async logReview(reviewPath: string, contentLength: number): Promise<void> {
+    await this.log(`Review completed: ${reviewPath} (${contentLength} chars)`);
   }
 
   /**
    * Logs the develop task completion.
    */
-  logDevelop(edits: Array<{ path: string; content: string }>): void {
-    this.log(`Develop completed: ${edits.length} file(s) edited`);
+  async logDevelop(edits: Array<{ path: string; content: string }>): Promise<void> {
+    await this.log(`Develop completed: ${edits.length} file(s) edited`);
     for (const edit of edits) {
-      this.log(`  - ${edit.path} (${edit.content.length} chars)`);
+      await this.log(`  - ${edit.path} (${edit.content.length} chars)`);
     }
   }
 
   /**
    * Logs commit information.
    */
-  logCommit(message: string): void {
-    this.log(`Committed: ${message}`);
+  async logCommit(message: string): Promise<void> {
+    await this.log(`Committed: ${message}`);
   }
 
   /**
    * Logs that no changes were committed.
    */
-  logNoChanges(): void {
-    this.log("No changes to commit");
+  async logNoChanges(): Promise<void> {
+    await this.log("No changes to commit");
+  }
+
+  /**
+   * Logs a sleep/backoff event.
+   */
+  async logSleep(durationMs: number): Promise<void> {
+    const seconds = Math.round(durationMs / 1000);
+    const minutes = Math.round(durationMs / 60000);
+    const display = durationMs >= 60000 ? `${minutes} minute(s)` : `${seconds} second(s)`;
+    await this.log(`Sleeping for ${display} before retry...`);
   }
 
   /**
    * Logs an error.
    */
-  logError(error: string): void {
-    this.log(`ERROR: ${error}`);
+  async logError(error: string): Promise<void> {
+    await this.log(`ERROR: ${error}`);
   }
 
   /**
-   * Finalizes the log and writes it to disk.
+   * Finalizes the log and performs rotation.
    * Also performs log rotation to keep only the last 100 files.
    */
   async finalize(): Promise<string> {
     const endTime = new Date();
     const duration = endTime.getTime() - this.startTime.getTime();
-    this.log(`=== Iteration ${this.iteration} completed in ${duration}ms ===`);
-
-    const logsDir = join(this.workingDirPath, LOGS_DIR);
-    await this.fs.mkdir(logsDir);
-
-    const timestamp = getTimestamp();
-    const logPath = join(logsDir, `${timestamp}.log`);
-    const content = this.lines.join("\n") + "\n";
-
-    await this.fs.writeFile(logPath, content);
+    await this.log(`=== Iteration ${this.iteration} completed in ${duration}ms ===`);
 
     // Rotate logs - keep only the last MAX_LOG_FILES
+    const logsDir = join(this.workingDirPath, LOGS_DIR);
     await this.rotateLogs(logsDir);
 
-    return logPath;
+    return this.logPath;
   }
 
   /**

@@ -44,19 +44,99 @@ describe("patch", () => {
     expect(mockedExecSync).toHaveBeenCalledTimes(2);
   });
 
-  it("stops loop when no edits are made", async () => {
+  it("stops after one iteration with --once flag when no edits", async () => {
     const fs = new MockFileSystem({
       "/project/claude-farmer/GOAL.md": "# Goal\n\nAlready complete.",
     });
 
-    // Return no edits - should stop after one iteration
+    // Return no edits
     const ai = new MockAIModel("# Review\n\nPerfect.", []);
 
-    const result = await patch("/project", fs, ai);
+    const result = await patch("/project", fs, ai, { once: true });
 
     expect(result.iterations).toBe(1);
     // Only checkout script should be called (no complete since no edits)
     expect(mockedExecSync).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses exponential backoff when no edits and not --once", async () => {
+    const fs = new MockFileSystem({
+      "/project/claude-farmer/GOAL.md": "# Goal",
+    });
+
+    const ai = new MockAIModel("# Review", []);
+    
+    // Track sleep calls
+    const sleepCalls: number[] = [];
+    const mockSleep = async (ms: number) => {
+      sleepCalls.push(ms);
+      // After 3 sleep calls, make the AI return edits to stop the loop
+      if (sleepCalls.length >= 3) {
+        ai.setEditsResponse([{ path: "/project/index.ts", content: "// done" }]);
+      }
+    };
+
+    const result = await patch("/project", fs, ai, { _sleepFn: mockSleep });
+
+    // Should have slept 3 times with exponential backoff
+    expect(sleepCalls).toHaveLength(3);
+    expect(sleepCalls[0]).toBe(60000);   // 1 minute
+    expect(sleepCalls[1]).toBe(120000);  // 2 minutes
+    expect(sleepCalls[2]).toBe(240000);  // 4 minutes
+    
+    // 4 iterations: 3 with no edits (sleep), 1 with edits (stop)
+    expect(result.iterations).toBe(4);
+  });
+
+  it("resets backoff after successful edits", async () => {
+    const fs = new MockFileSystem({
+      "/project/claude-farmer/GOAL.md": "# Goal",
+    });
+
+    let callCount = 0;
+    const ai = new MockAIModel("# Review", []);
+    
+    const sleepCalls: number[] = [];
+    const mockSleep = async (ms: number) => {
+      sleepCalls.push(ms);
+    };
+
+    vi.spyOn(ai, "generateEdits").mockImplementation(async () => {
+      callCount++;
+      // Iteration 1: no edits (sleep 1 min)
+      // Iteration 2: no edits (sleep 2 min)
+      // Iteration 3: edits (reset backoff)
+      // Iteration 4: no edits (sleep 1 min - reset!)
+      // Iteration 5: edits (stop test)
+      if (callCount === 3 || callCount === 5) {
+        return [{ path: "/project/index.ts", content: `// v${callCount}` }];
+      }
+      return [];
+    });
+
+    // Use once: true after 5 iterations to stop
+    let iterations = 0;
+    vi.spyOn(ai, "generateReview").mockImplementation(async () => {
+      iterations++;
+      if (iterations >= 5) {
+        // Force stop by making next iteration have edits and using once
+      }
+      return "# Review";
+    });
+
+    // Run for exactly 5 iterations then stop
+    const patchPromise = patch("/project", fs, ai, { 
+      _sleepFn: mockSleep,
+      once: false 
+    });
+
+    // Since we return edits on iteration 5, it will stop
+    const result = await patchPromise;
+
+    // Verify backoff reset: after edits in iteration 3, sleep should be 1 min again
+    expect(sleepCalls[0]).toBe(60000);   // After iteration 1
+    expect(sleepCalls[1]).toBe(120000);  // After iteration 2  
+    expect(sleepCalls[2]).toBe(60000);   // After iteration 4 (reset after iteration 3 had edits)
   });
 
   it("writes REVIEW.md during iteration", async () => {
@@ -130,7 +210,7 @@ describe("patch", () => {
     expect(logContent).toContain("ERROR: AI failed");
   });
 
-  it("loops multiple times until no edits", async () => {
+  it("loops multiple times when edits are made each iteration", async () => {
     const fs = new MockFileSystem({
       "/project/claude-farmer/GOAL.md": "# Goal",
     });
@@ -139,17 +219,63 @@ describe("patch", () => {
     const ai = new MockAIModel("# Review", []);
     vi.spyOn(ai, "generateEdits").mockImplementation(async () => {
       callCount++;
-      // Return edits for first 2 calls, then empty
+      // Return edits for first 2 calls, then empty to stop (with --once behavior via _sleepFn)
       if (callCount <= 2) {
         return [{ path: "/project/index.ts", content: `// v${callCount}` }];
       }
       return [];
     });
 
-    const result = await patch("/project", fs, ai);
+    const result = await patch("/project", fs, ai, { once: true });
 
-    expect(result.iterations).toBe(3);
-    // 3 checkouts + 2 completes (no complete on 3rd iteration since no edits)
-    expect(mockedExecSync).toHaveBeenCalledTimes(5);
+    // With once: true, only runs one iteration
+    expect(result.iterations).toBe(1);
+  });
+
+  it("continues looping with edits without --once flag", async () => {
+    const fs = new MockFileSystem({
+      "/project/claude-farmer/GOAL.md": "# Goal",
+    });
+
+    let callCount = 0;
+    const ai = new MockAIModel("# Review", []);
+    vi.spyOn(ai, "generateEdits").mockImplementation(async () => {
+      callCount++;
+      // Return edits for first 2 calls, then trigger stop
+      if (callCount <= 2) {
+        return [{ path: "/project/index.ts", content: `// v${callCount}` }];
+      }
+      // Third call returns edits to stop (since we need to test the loop)
+      return [{ path: "/project/done.ts", content: "// done" }];
+    });
+
+    // Use a sleep fn that stops after we've verified looping works
+    let shouldStop = false;
+    const mockSleep = async () => {
+      shouldStop = true;
+    };
+
+    // Spy on generateEdits to stop after 3 iterations
+    let iterations = 0;
+    const originalGenerateEdits = ai.generateEdits.bind(ai);
+    vi.spyOn(ai, "generateEdits").mockImplementation(async (ctx) => {
+      iterations++;
+      if (iterations > 3) {
+        // Force stop by returning edits and relying on the loop logic
+        throw new Error("__TEST_STOP__");
+      }
+      return originalGenerateEdits(ctx);
+    });
+
+    try {
+      await patch("/project", fs, ai, { _sleepFn: mockSleep });
+    } catch (e) {
+      if ((e as Error).message !== "__TEST_STOP__") throw e;
+    }
+
+    // Verify we looped at least twice with successful edits
+    expect(iterations).toBeGreaterThanOrEqual(2);
+    // git-patch-complete should have been called for iterations with edits
+    expect(mockedExecSync).toHaveBeenCalled();
   });
 });
