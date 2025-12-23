@@ -42,6 +42,10 @@ class NodeFileSystem implements FileSystem {
     await fsPromises.writeFile(path, content, "utf-8");
   }
 
+  async appendFile(path: string, content: string): Promise<void> {
+    await fsPromises.appendFile(path, content, "utf-8");
+  }
+
   async exists(path: string): Promise<boolean> {
     try {
       await fsPromises.access(path);

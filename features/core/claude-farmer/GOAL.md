@@ -53,9 +53,9 @@ Workflow:
 
 Default: Loop forever for iterative improvement until user stops it.
 
-- **Do not stop if  No more changes needed.**
+- **Do not stop if no more changes needed.**
    - If no more improvement could be found, never terminate itself. Sleep for 1 minute, 2 minute, 4 minute, 8 minutes ..., (maxed at 24 hour.)
-- Again,  **Do not stop if  No more changes needed.**
+- Again,  **Do not stop if no more changes needed.**
 
 ## AI Integration
 

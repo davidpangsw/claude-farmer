@@ -48,6 +48,11 @@ class TestFileSystem implements FileSystem {
     this.files.set(path, content);
   }
 
+  async appendFile(path: string, content: string): Promise<void> {
+    const existing = this.files.get(path) || "";
+    this.files.set(path, existing + content);
+  }
+
   async exists(path: string): Promise<boolean> {
     return this.files.has(path) || this.directories.has(path);
   }

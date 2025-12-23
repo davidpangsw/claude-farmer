@@ -36,6 +36,7 @@ Review a working directory and provide improvement suggestions. Research best pr
 - Prioritize by impact
 - Skip empty sections
 - No generic advice - be specific
+- Do not force feature. Don't bring up some new feature that is irrelavant to the GOAL.md
 
 ## Output Format
 
