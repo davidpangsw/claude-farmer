@@ -218,7 +218,7 @@ export class ClaudeCodeAI implements AIModel {
     timeout?: number;
   }) {
     this.cwd = options.cwd;
-    this.ultrathink = options.ultrathink ?? true;
+    this.ultrathink = options.ultrathink ?? false;
     this.model = options.model;
     this.timeout = options.timeout;
   }
@@ -258,21 +258,41 @@ export class ClaudeCodeAI implements AIModel {
       throw new Error(`Claude Code failed: ${result.output}`);
     }
 
-    // Parse JSON from output - find the last JSON array (most likely the actual response)
-    const jsonMatches = result.output.match(/\[[\s\S]*?\]/g);
-    if (!jsonMatches || jsonMatches.length === 0) {
+    // Parse JSON from output by finding '[' positions and using bracket matching
+    // Find all top-level array candidates by tracking bracket depth
+    const candidates: string[] = [];
+    let depth = 0;
+    let startPos = -1;
+
+    for (let i = 0; i < result.output.length; i++) {
+      const char = result.output[i];
+      if (char === "[") {
+        if (depth === 0) {
+          startPos = i;
+        }
+        depth++;
+      } else if (char === "]") {
+        depth--;
+        if (depth === 0 && startPos !== -1) {
+          candidates.push(result.output.slice(startPos, i + 1));
+          startPos = -1;
+        }
+      }
+    }
+
+    if (candidates.length === 0) {
       throw new Error("Could not parse file edits from Claude Code output");
     }
 
-    // Try parsing from last match to first (last is most likely the actual output)
-    for (let i = jsonMatches.length - 1; i >= 0; i--) {
+    // Try parsing from the last candidate first since output is usually at the end
+    for (let i = candidates.length - 1; i >= 0; i--) {
       try {
-        const parsed = JSON.parse(jsonMatches[i]);
+        const parsed = JSON.parse(candidates[i]);
         if (Array.isArray(parsed) && parsed.every(isValidFileEdit)) {
           return parsed;
         }
       } catch {
-        // Try next match
+        // Not valid JSON, try next candidate
       }
     }
 

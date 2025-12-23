@@ -58,11 +58,9 @@ export async function patch(
     // Prepare for patch iteration
     executeScript(join(scriptsDir, "git-patch-checkout.sh"), workingDirPath);
 
-    // Run review and develop
-    const developResult = await develop(workingDirPath, fs, ai);
-
-    // Also run review for the next iteration (if looping)
+    // Run review first, then develop based on review feedback
     await review(workingDirPath, fs, ai);
+    const developResult = await develop(workingDirPath, fs, ai);
 
     // Commit changes
     executeScript(join(scriptsDir, "git-patch-complete.sh"), workingDirPath);

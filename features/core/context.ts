@@ -34,9 +34,10 @@ export async function gatherWorkingDirContext(
   // Gather source files (*.ts files in working directory, excluding claude-farmer/)
   const sourceFiles: FileContent[] = [];
   const tsFiles = await fs.listFiles(workingDirPath, "**/*.ts");
+  const claudeFarmerPath = join(workingDirPath, "claude-farmer");
   for (const filePath of tsFiles) {
-    // Skip files in claude-farmer directory (use sep for cross-platform)
-    if (!filePath.includes(`${sep}claude-farmer${sep}`)) {
+    // Skip files in or under the claude-farmer directory
+    if (!filePath.startsWith(claudeFarmerPath + sep) && filePath !== claudeFarmerPath) {
       const content = await fs.readFile(filePath);
       sourceFiles.push({ path: filePath, content });
     }
