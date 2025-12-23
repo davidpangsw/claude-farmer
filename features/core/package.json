@@ -7,6 +7,19 @@
   "bin": {
     "claude-farmer": "./cli.js"
   },
+  "files": [
+    "*.js",
+    "*.d.ts",
+    "commands/**/*.js",
+    "commands/**/*.d.ts",
+    "tasks/**/*.js",
+    "tasks/**/*.d.ts",
+    "claude/**/*.js",
+    "claude/**/*.d.ts",
+    "logging/**/*.js",
+    "logging/**/*.d.ts",
+    "scripts/*.sh"
+  ],
   "scripts": {
     "test": "vitest",
     "build": "tsc",

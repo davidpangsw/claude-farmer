@@ -1,10 +1,10 @@
 #!/bin/bash
-# Completes a patch iteration by staging and committing changes.
+# Complete patch iteration by staging all changes and committing.
 # Usage: git-patch-complete.sh "commit message"
 
 set -e
 
-COMMIT_MESSAGE="${1:-claude-farmer: automated update}"
+COMMIT_MSG="${1:-claude-farmer: automated patch}"
 
 # Stage all changes
 git add -A
@@ -16,6 +16,6 @@ if git diff --cached --quiet; then
 fi
 
 # Commit with the provided message
-git commit -m "$COMMIT_MESSAGE"
+git commit -m "$COMMIT_MSG"
 
-echo "Committed: $COMMIT_MESSAGE"
+echo "Changes committed successfully"

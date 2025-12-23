@@ -4,7 +4,7 @@ Web search unavailable. Proceeding with code analysis.
 # Review
 
 ## Summary
-CLI implemented; all major goals met. Minor refinements remain.
+Core implementation complete; missing git scripts will cause runtime errors.
 
 ## Goal Alignment
 - [x] Review task: reads GOAL, source → produces REVIEW.md
@@ -13,40 +13,32 @@ CLI implemented; all major goals met. Minor refinements remain.
 - [x] Tasks not exposed: only commands exported in index.ts
 - [x] Logging with rotation (100 files max)
 - [x] Real-time logging via appendFile
-- [x] Exponential backoff with reset on edits
-- [x] Graceful shutdown handling (SIGINT/SIGTERM)
-- [x] Path validation in develop task
-- [x] --dry-run option implemented
-- [x] CLI entry point created (`cli.ts`)
-- [ ] package.json `bin` field not configured for npm global install
+- [x] Exponential backoff with reset on edits (1→2→4→...→24h max)
+- [x] `--once` flag implemented
+- [x] `--dry-run` option implemented
+- [x] bin field configured in package.json
+- [x] Path rejection security logging
+- [ ] Git scripts missing: `scripts/git-patch-checkout.sh` and `scripts/git-patch-complete.sh` do not exist
 
 ## Suggestions
 
 ### High Priority
-1. **Add `bin` field to package.json** for npm global install
-   - CLI exists but won't work as `claude-farmer patch` without bin config
-   - Need: `"bin": { "claude-farmer": "./cli.js" }` in package.json
+1. **Create git scripts** - `commands/patch/index.ts:78` references `scriptsDir` but no scripts exist
+   - Need `scripts/git-patch-checkout.sh`: prepare working tree for edits
+   - Need `scripts/git-patch-complete.sh`: stage, commit with message arg
+   - Without these, `patch` command fails at runtime
 
 ### Medium Priority
-1. **Missing git scripts** (`scripts/git-patch-checkout.sh`, `scripts/git-patch-complete.sh`)
-   - `commands/patch/index.ts:78` references `scriptsDir` but no scripts exist in codebase
-   - These need to be created or their absence will cause runtime errors
+1. **Handle missing scripts gracefully** (`commands/patch/index.ts:103-107`)
+   - Current code executes scripts via `execSync` which throws if file not found
+   - Consider checking script existence before execution, or bundling inline git commands
 
-2. **CLI doesn't pass `cwd` to ClaudeCodeAI correctly** (`cli.ts:101-104`)
-   - Creates AI with `cwd: options.workingDir` but then passes `options.workingDir` to `patch()` separately
-   - When `workingDir` differs from `process.cwd()`, Claude Code spawns in wrong directory
-   - Fix: Ensure AI `cwd` matches the working directory being patched
-
-3. **Develop task logs filtered edits but returns them** (`tasks/develop/index.ts:52-67`)
-   - Path validation silently filters unsafe paths without logging
-   - Should log when paths are rejected for security transparency
-
-### Low Priority
-1. **Consider adding `--version` flag to CLI**
-   - Standard CLI practice for debugging and support
+2. **Test coverage for git script execution**
+   - Current tests mock `execSync` entirely
+   - No integration test verifies actual git operations work
 
 ## Next Steps
-1. Create git scripts or document their expected location
-2. Add bin field to package.json
-3. Add logging when develop task rejects unsafe paths
+1. Create `scripts/git-patch-checkout.sh` with: `git stash && git pull --rebase`
+2. Create `scripts/git-patch-complete.sh` with: `git add -A && git commit -m "$1"`
+3. Add scripts to package.json `files` field for npm publish
 ```

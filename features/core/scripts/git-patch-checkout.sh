@@ -1,17 +1,21 @@
 #!/bin/bash
-# Prepares the working directory for a patch iteration.
-# Ensures we're on a clean state before making changes.
+# Prepare working tree for patch iteration.
+# Stashes any uncommitted changes and pulls latest from remote.
 
 set -e
 
-# Fetch latest from remote (if configured)
-if git remote get-url origin &>/dev/null; then
-  git fetch origin 2>/dev/null || true
+# Stash any uncommitted changes (if any)
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "Stashing uncommitted changes..."
+  git stash push -m "claude-farmer: auto-stash before patch"
 fi
 
-# Check for uncommitted changes
-if ! git diff --quiet HEAD 2>/dev/null; then
-  echo "Warning: Uncommitted changes detected" >&2
+# Pull latest changes with rebase (if remote exists)
+if git remote | grep -q .; then
+  echo "Pulling latest changes..."
+  git pull --rebase || echo "No remote configured or pull failed, continuing..."
+else
+  echo "No remote configured, skipping pull"
 fi
 
-echo "Ready for patch iteration"
+echo "Working tree ready for patch"
