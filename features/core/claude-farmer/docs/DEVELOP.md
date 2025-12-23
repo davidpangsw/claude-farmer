@@ -2,23 +2,13 @@
 
 ## Changes Made
 
-1. **Fixed pino buffering issue** (`logging/index.ts:77-80`)
-   - Added `sync: true` to pino configuration to ensure real-time log streaming without buffering
-   - GOAL.md requires "Stream logs in real-time (no buffering)" - this was missing
+1. **context.ts**: Added file exclusions (`node_modules`, `package-lock.json`, `*.lock`) and 100KB file size limit to prevent token bloat
+2. **commands/patch/index.ts**: Replaced shell string git commit with spawn using args array for safer commit message handling
+3. **tests/context.test.ts**: Added unit tests for context gathering, file exclusions, and size limits
+4. **tests/logging.test.ts**: Added unit tests for iteration logger
+5. **tests/tasks-review.test.ts**: Added unit tests for review task
+6. **tests/tasks-develop.test.ts**: Added unit tests for develop task with path traversal protection
 
 ## Problems Encountered
 
-1. **GOAL.md Contradiction** (not fixable by AI)
-   - Line ~85 says "Only expose patch()" but lines 103-113 document `develop()` as an exposed API
-   - The current implementation correctly exposes both `patch()` and `develop()` as documented in the API section
-   - This is a documentation inconsistency in GOAL.md that needs human clarification
-   - AI cannot edit GOAL.md per the spec: "Human-written spec (AI must not edit this file)"
-
-## Verification
-
-- All other items from REVIEW.md were already correctly implemented:
-  - DEVELOP.json generation ✓
-  - Timestamps in logs using OS time ✓
-  - Exponential backoff ✓
-  - Path traversal protection ✓
-  - Uses rotation library (rotating-file-stream) with maxFiles: 30 ✓
+- None

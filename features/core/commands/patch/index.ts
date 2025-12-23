@@ -9,7 +9,7 @@
  * Loop forever by default. Uses exponential backoff (1→2→4→8 min... max 2h) when no changes.
  */
 
-import { execSync } from "child_process";
+import { execSync, spawnSync } from "child_process";
 import { basename } from "path";
 import { review } from "../../tasks/review/index.js";
 import { develop } from "../../tasks/develop/index.js";
@@ -80,12 +80,23 @@ export async function patch(
         const suffix = fileCount > 3 ? ` and ${fileCount - 3} more` : "";
         const commitMessage = `claude-farmer: updated ${fileNames}${suffix}`;
 
-        // Git add and commit
-        execSync(`git add -A && git commit -m "${commitMessage.replace(/"/g, '\\"')}"`, {
+        // Git add and commit using spawn with args array for safer handling
+        execSync("git add -A", {
           cwd: workingDirPath,
           encoding: "utf-8",
           stdio: ["pipe", "pipe", "pipe"],
         });
+
+        const commitResult = spawnSync("git", ["commit", "-m", commitMessage], {
+          cwd: workingDirPath,
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+
+        if (commitResult.status !== 0) {
+          throw new Error(`Git commit failed: ${commitResult.stderr || commitResult.stdout}`);
+        }
+
         logger.log(`Committed: ${commitMessage}`);
 
         // Reset backoff on successful edits

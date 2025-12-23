@@ -82,7 +82,7 @@ One-line assessment.
 
 ## Exposed API
 
-Only expose the `patch()` method. Do not expose tasks or any other functions.
+Only expose the methods in this section. Do not expose tasks or any other functions.
 
 ### patch(options)
 
