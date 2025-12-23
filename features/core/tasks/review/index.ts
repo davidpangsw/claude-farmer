@@ -1,42 +1,40 @@
 /**
  * Review task implementation.
  *
- * Reads $f/GOAL.md, $f/docs/RESEARCH.md, and the relevant source code in $f/
- * to produce $f/docs/REVIEW.md with suggestions to improve the feature.
+ * Reads claude-farmer/GOAL.md and the relevant source code
+ * to produce claude-farmer/docs/REVIEW.md with improvement suggestions.
+ * Includes research via web search.
  */
 
 import type {
   ReviewResult,
   FileSystem,
   AIModel,
-  CoreConfig,
 } from "../../types.js";
-import { gatherFeatureContext } from "../../context.js";
-import { join, dirname } from "path";
+import { gatherWorkingDirContext } from "../../context.js";
+import { join, basename, dirname } from "path";
 
 /**
- * Reviews a feature and generates improvement suggestions.
+ * Reviews a working directory and generates improvement suggestions.
  *
- * @param featureName - The name of the feature to review
- * @param config - Core configuration
+ * @param workingDirPath - The path to the working directory
  * @param fs - File system interface
  * @param ai - AI model interface
  * @returns The review result with the generated content
  */
 export async function review(
-  featureName: string,
-  config: CoreConfig,
+  workingDirPath: string,
   fs: FileSystem,
   ai: AIModel
 ): Promise<ReviewResult> {
   // Gather context
-  const context = await gatherFeatureContext(featureName, config, fs);
+  const context = await gatherWorkingDirContext(workingDirPath, fs);
 
-  // Generate review using AI
+  // Generate review using AI (includes research via web search)
   const reviewContent = await ai.generateReview(context);
 
-  // Write review to docs/REVIEW.md
-  const reviewPath = join(context.featurePath, "docs", "REVIEW.md");
+  // Write review to claude-farmer/docs/REVIEW.md
+  const reviewPath = join(workingDirPath, "claude-farmer", "docs", "REVIEW.md");
 
   // Ensure docs directory exists
   const docsDir = dirname(reviewPath);
@@ -45,7 +43,7 @@ export async function review(
   await fs.writeFile(reviewPath, reviewContent);
 
   return {
-    featureName,
+    workingDirName: basename(workingDirPath),
     reviewPath,
     content: reviewContent,
   };

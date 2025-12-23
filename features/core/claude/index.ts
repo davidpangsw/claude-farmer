@@ -5,7 +5,7 @@
  * Claude Code in headless mode to generate responses.
  */
 
-import type { AIModel, FeatureContext, FileEdit, FileSystem, SummaryFile } from "../types.js";
+import type { AIModel, WorkingDirContext, FileEdit, FileSystem } from "../types.js";
 import type { ClaudeCodeOptions, ClaudeCodeResult } from "./types.js";
 import { spawn } from "child_process";
 import { join } from "path";
@@ -63,16 +63,12 @@ export async function runClaudeCode(
 }
 
 /**
- * Formats the feature context into a string for the prompt.
+ * Formats the working directory context into a string for the prompt.
  */
-function formatContext(context: FeatureContext): string {
+function formatContext(context: WorkingDirContext): string {
   let result = "";
 
-  result += `# GOAL.md (${context.featureName})\n\n${context.goal.content}\n\n`;
-
-  if (context.research) {
-    result += `# RESEARCH.md\n\n${context.research.content}\n\n`;
-  }
+  result += `# GOAL.md (${context.workingDirName})\n\n${context.goal.content}\n\n`;
 
   if (context.review) {
     result += `# REVIEW.md\n\n${context.review.content}\n\n`;
@@ -120,28 +116,7 @@ export class ClaudeCodeAI implements AIModel {
     return this.fs.readFile(promptPath);
   }
 
-  async generateResearch(context: FeatureContext): Promise<string> {
-    const promptTemplate = await this.readPromptFile("research");
-    const contextStr = formatContext(context);
-
-    const prompt = `${promptTemplate}\n\n---\n\n${contextStr}`;
-
-    const result = await runClaudeCode({
-      prompt,
-      cwd: this.cwd,
-      ultrathink: this.ultrathink,
-      model: this.model,
-      timeout: this.timeout,
-    });
-
-    if (!result.success) {
-      throw new Error(`Claude Code failed: ${result.output}`);
-    }
-
-    return result.output;
-  }
-
-  async generateReview(context: FeatureContext): Promise<string> {
+  async generateReview(context: WorkingDirContext): Promise<string> {
     const promptTemplate = await this.readPromptFile("review");
     const contextStr = formatContext(context);
 
@@ -162,7 +137,7 @@ export class ClaudeCodeAI implements AIModel {
     return result.output;
   }
 
-  async generateEdits(context: FeatureContext): Promise<FileEdit[]> {
+  async generateEdits(context: WorkingDirContext): Promise<FileEdit[]> {
     const promptTemplate = await this.readPromptFile("develop");
     const contextStr = formatContext(context);
 
@@ -187,32 +162,5 @@ export class ClaudeCodeAI implements AIModel {
     }
 
     return JSON.parse(jsonMatch[0]) as FileEdit[];
-  }
-
-  async generateSummary(context: FeatureContext): Promise<SummaryFile[]> {
-    const promptTemplate = await this.readPromptFile("summary");
-    const contextStr = formatContext(context);
-
-    const prompt = `${promptTemplate}\n\n---\n\n${contextStr}`;
-
-    const result = await runClaudeCode({
-      prompt,
-      cwd: this.cwd,
-      ultrathink: this.ultrathink,
-      model: this.model,
-      timeout: this.timeout,
-    });
-
-    if (!result.success) {
-      throw new Error(`Claude Code failed: ${result.output}`);
-    }
-
-    // Parse JSON from output
-    const jsonMatch = result.output.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) {
-      throw new Error("Could not parse summary files from Claude Code output");
-    }
-
-    return JSON.parse(jsonMatch[0]) as SummaryFile[];
   }
 }

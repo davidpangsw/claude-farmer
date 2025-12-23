@@ -5,23 +5,30 @@
  * Farm your code with Claude tokens overnight.
  *
  * Usage:
- *   claude-farmer patch <feature> [options]
+ *   claude-farmer patch [working_directory] [options]
  *
  * Commands:
  *   patch  - Run Review → Develop cycle with git versioning
  *
  * Options:
- *   --trunk <branch>  - Trunk branch (default: develop)
- *   --once            - Run once instead of looping
- *   --help            - Show this help message
+ *   --trunk <branch>     - Trunk branch to branch from (default: develop)
+ *   --checkout <branch>  - Feature branch to work on (default: features/<working_directory_name>)
+ *   --once               - Run once instead of looping
+ *   --help               - Show this help message
+ *
+ * Working directory structure:
+ *   <working_directory>/
+ *   └── claude-farmer/
+ *       ├── GOAL.md       # Human-written specification
+ *       └── docs/         # Markdown files for AI to read/write
  */
 
-import { join } from "path";
+import { join, basename, resolve } from "path";
 import { execSync } from "child_process";
 import { promises as fsPromises } from "fs";
 import { glob } from "fs/promises";
 import { ClaudeCodeAI } from "../features/core/index.js";
-import type { FileSystem, CoreConfig } from "../features/core/index.js";
+import type { FileSystem } from "../features/core/index.js";
 // Import tasks directly (internal to core feature)
 import { review } from "../features/core/tasks/review/index.js";
 import { develop } from "../features/core/tasks/develop/index.js";
@@ -71,20 +78,23 @@ function printHelp(): void {
 Claude Farmer - Farm your code with Claude tokens overnight
 
 Usage:
-  claude-farmer patch <feature> [options]
+  claude-farmer patch [working_directory] [options]
 
 Commands:
   patch   Run Review → Develop cycle with git versioning
 
 Options:
-  --trunk <branch>  Trunk branch (default: develop)
-  --once            Run once instead of looping (default: loop)
-  --help            Show this help message
+  --trunk <branch>     Trunk branch to branch from (default: develop)
+  --checkout <branch>  Feature branch to work on (default: features/<working_directory_name>)
+  --once               Run once instead of looping (default: loop)
+  --help               Show this help message
 
 Examples:
-  claude-farmer patch core
-  claude-farmer patch core --trunk main
-  claude-farmer patch core --once
+  claude-farmer patch                           # Use current directory
+  claude-farmer patch ./features/myfeature      # Specify working directory
+  claude-farmer patch --trunk main              # Use main as trunk branch
+  claude-farmer patch --checkout my-branch      # Use custom feature branch
+  claude-farmer patch --once                    # Run single iteration
 `);
 }
 
@@ -97,9 +107,9 @@ function getArgValue(args: string[], flag: string): string | undefined {
 }
 
 async function runPatch(
-  featureName: string,
+  workingDir: string,
+  branchName: string,
   projectRoot: string,
-  config: CoreConfig,
   fs: FileSystem,
   ai: ClaudeCodeAI,
   loop: boolean
@@ -120,7 +130,7 @@ async function runPatch(
     // Step 1: Git checkout (create patch branch)
     console.log("\n[1/4] Creating patch branch...");
     try {
-      const checkoutOutput = execSync(`bash "${checkoutScript}" "${featureName}"`, {
+      const checkoutOutput = execSync(`bash "${checkoutScript}" "${branchName}"`, {
         cwd: projectRoot,
         encoding: "utf-8",
       });
@@ -134,12 +144,12 @@ async function runPatch(
 
     // Step 2: Review
     console.log("\n[2/4] Running review...");
-    const reviewResult = await review(featureName, config, fs, ai);
+    const reviewResult = await review(workingDir, fs, ai);
     console.log(`Review written to: ${reviewResult.reviewPath}`);
 
     // Step 3: Develop
     console.log("\n[3/4] Running develop...");
-    const developResult = await develop(featureName, config, fs, ai);
+    const developResult = await develop(workingDir, fs, ai);
     console.log(`Applied ${developResult.edits.length} file edits`);
     for (const edit of developResult.edits) {
       console.log(`  - ${edit.path}`);
@@ -149,7 +159,7 @@ async function runPatch(
     console.log("\n[4/4] Completing patch...");
     try {
       const completeOutput = execSync(
-        `bash "${completeScript}" "${featureName}" "Auto-generated patch"`,
+        `bash "${completeScript}" "${branchName}" "Auto-generated patch"`,
         {
           cwd: projectRoot,
           encoding: "utf-8",
@@ -180,47 +190,56 @@ async function main(): Promise<void> {
   }
 
   const command = args[0];
-  const featureName = args[1];
-  const trunk = getArgValue(args, "--trunk") || "develop";
-  const once = args.includes("--once");
-  const loop = !once; // Default is loop
-
   if (command !== "patch") {
     console.error(`Error: Unknown command "${command}"`);
     console.error("Available commands: patch");
     process.exit(1);
   }
 
-  if (!featureName) {
-    console.error("Error: Feature name required");
-    printHelp();
-    process.exit(1);
+  // Parse arguments - working_directory is optional positional arg after command
+  // It's the first non-flag argument after "patch"
+  let workingDirArg: string | undefined;
+  for (let i = 1; i < args.length; i++) {
+    if (!args[i].startsWith("--")) {
+      workingDirArg = args[i];
+      break;
+    } else if (args[i] === "--trunk" || args[i] === "--checkout") {
+      i++; // Skip the value of these flags
+    }
   }
 
-  // Determine project root (current directory)
+  const trunk = getArgValue(args, "--trunk") || "develop";
+  const once = args.includes("--once");
+  const loop = !once; // Default is loop
+
+  // Resolve working directory (default to current directory)
+  const workingDir = workingDirArg ? resolve(workingDirArg) : process.cwd();
+  const workingDirName = basename(workingDir);
+
+  // Feature branch name (default: features/<working_directory_name>)
+  const branchName = getArgValue(args, "--checkout") || `features/${workingDirName}`;
+
+  // Determine project root (current directory where git repo is)
   const projectRoot = process.cwd();
-  const config: CoreConfig = {
-    projectRoot,
-    featuresDir: join(projectRoot, "features"),
-  };
 
   const fs = new NodeFileSystem();
   const tasksDir = join(projectRoot, "features", "core", "tasks");
 
   const ai = new ClaudeCodeAI({
-    cwd: projectRoot,
+    cwd: workingDir,
     ultrathink: true,
     tasksDir,
     fs,
   });
 
   console.log(`Claude Farmer - Patch command`);
-  console.log(`Feature: ${featureName}`);
+  console.log(`Working directory: ${workingDir}`);
+  console.log(`Feature branch: ${branchName}`);
   console.log(`Trunk: ${trunk}`);
   console.log(`Mode: ${loop ? "loop" : "once"}`);
 
   try {
-    await runPatch(featureName, projectRoot, config, fs, ai, loop);
+    await runPatch(workingDir, branchName, projectRoot, fs, ai, loop);
     console.log("\nDone!");
   } catch (error) {
     console.error("Error:", error instanceof Error ? error.message : error);

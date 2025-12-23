@@ -3,17 +3,21 @@
  *
  * Tests the Patch command workflow: Review → Develop
  * (Git operations are tested separately via shell scripts)
+ *
+ * Working directory structure expected by the farmer:
+ *   <working_directory>/
+ *   └── claude-farmer/
+ *       ├── GOAL.md       # Human-written specification
+ *       └── docs/         # Markdown files for AI to read/write
  */
 
 import { describe, it, expect } from "vitest";
-import { gatherFeatureContext } from "../features/core/index.js";
+import { gatherWorkingDirContext } from "../features/core/index.js";
 import type {
   FileSystem,
   AIModel,
-  FeatureContext,
+  WorkingDirContext,
   FileEdit,
-  SummaryFile,
-  CoreConfig,
 } from "../features/core/index.js";
 // Import tasks directly (internal to core feature)
 import { review } from "../features/core/tasks/review/index.js";
@@ -77,15 +81,13 @@ class TestFileSystem implements FileSystem {
 
 /**
  * Test AI model that simulates the patch workflow.
+ * Only implements Review and Develop (per README.md workflow).
  */
 class TestAIModel implements AIModel {
-  async generateResearch(context: FeatureContext): Promise<string> {
-    return `# Research: ${context.featureName}\n\nResearch findings.`;
-  }
-
-  async generateReview(context: FeatureContext): Promise<string> {
+  async generateReview(context: WorkingDirContext): Promise<string> {
+    // Review includes research via web search, then generates suggestions
     const hasCode = context.sourceFiles.length > 0;
-    return `# Review: ${context.featureName}
+    return `# Review: ${context.workingDirName}
 
 ## Summary
 ${hasCode ? "Feature has implementation." : "Feature needs implementation."}
@@ -95,70 +97,64 @@ ${hasCode ? "1. Add more tests" : "1. Implement the feature"}
 `;
   }
 
-  async generateEdits(context: FeatureContext): Promise<FileEdit[]> {
-    // Simulate development: generate implementation
+  async generateEdits(context: WorkingDirContext): Promise<FileEdit[]> {
+    // Develop: implement GOAL, address REVIEW feedback
     return [
       {
-        path: `${context.featurePath}/index.ts`,
+        path: `${context.workingDirPath}/index.ts`,
         content: `/**
- * ${context.featureName} feature
+ * ${context.workingDirName} feature
  */
 export function hello(): string {
-  return "Hello from ${context.featureName}";
+  return "Hello from ${context.workingDirName}";
 }
 `,
       },
     ];
   }
-
-  async generateSummary(context: FeatureContext): Promise<SummaryFile[]> {
-    return [{ filename: "OVERVIEW.md", content: `# ${context.featureName}` }];
-  }
 }
 
 describe("Core Integration - Patch Workflow", () => {
-  const config: CoreConfig = {
-    projectRoot: "/project",
-    featuresDir: "/project/features",
-  };
-
   it("runs patch workflow: review → develop", async () => {
+    // Working directory with claude-farmer/GOAL.md structure
     const fs = new TestFileSystem({
-      "/project/features/myfeature/GOAL.md": "# Goal\n\nBuild a greeting feature.",
+      "/project/features/myfeature/claude-farmer/GOAL.md": "# Goal\n\nBuild a greeting feature.",
     });
 
     const ai = new TestAIModel();
+    const workingDir = "/project/features/myfeature";
 
     // Step 1: Review (before implementation)
-    const reviewResult1 = await review("myfeature", config, fs, ai);
-    expect(reviewResult1.featureName).toBe("myfeature");
+    const reviewResult1 = await review(workingDir, fs, ai);
+    expect(reviewResult1.workingDirName).toBe("myfeature");
     expect(reviewResult1.content).toContain("needs implementation");
-    expect(fs.getFile("/project/features/myfeature/docs/REVIEW.md")).toContain(
+    expect(fs.getFile("/project/features/myfeature/claude-farmer/docs/REVIEW.md")).toContain(
       "needs implementation"
     );
 
     // Step 2: Develop
-    const developResult = await develop("myfeature", config, fs, ai);
+    const developResult = await develop(workingDir, fs, ai);
     expect(developResult.edits).toHaveLength(1);
     expect(fs.getFile("/project/features/myfeature/index.ts")).toContain(
       "Hello from myfeature"
     );
 
     // Step 3: Review (after implementation) - verifies iterative improvement
-    const reviewResult2 = await review("myfeature", config, fs, ai);
+    const reviewResult2 = await review(workingDir, fs, ai);
     expect(reviewResult2.content).toContain("has implementation");
   });
 
   it("gathers context correctly for patch workflow", async () => {
+    // Working directory with claude-farmer/ structure
     const fs = new TestFileSystem({
-      "/project/features/test/GOAL.md": "# Goal\n\nTest feature.",
+      "/project/features/test/claude-farmer/GOAL.md": "# Goal\n\nTest feature.",
       "/project/features/test/index.ts": "export const x = 1;",
-      "/project/features/test/docs/REVIEW.md": "# Review",
+      "/project/features/test/claude-farmer/docs/REVIEW.md": "# Review",
     });
 
-    const context = await gatherFeatureContext("test", config, fs);
+    const context = await gatherWorkingDirContext("/project/features/test", fs);
 
-    expect(context.featureName).toBe("test");
+    expect(context.workingDirName).toBe("test");
     expect(context.goal.content).toBe("# Goal\n\nTest feature.");
     expect(context.review?.content).toBe("# Review");
     expect(context.sourceFiles).toHaveLength(1);

@@ -1,36 +1,33 @@
 /**
  * Develop task implementation.
  *
- * Reads $f/GOAL.md, $f/docs/REVIEW.md (if it exists),
- * and the relevant source code in $f/ to edit the code.
+ * Reads claude-farmer/GOAL.md, claude-farmer/docs/REVIEW.md (if it exists),
+ * and the relevant source code to implement requirements and address feedback.
  */
 
 import type {
   DevelopResult,
   FileSystem,
   AIModel,
-  CoreConfig,
 } from "../../types.js";
-import { gatherFeatureContext } from "../../context.js";
-import { dirname } from "path";
+import { gatherWorkingDirContext } from "../../context.js";
+import { dirname, basename } from "path";
 
 /**
- * Develops a feature by generating and applying code edits.
+ * Develops a working directory by generating and applying code edits.
  *
- * @param featureName - The name of the feature to develop
- * @param config - Core configuration
+ * @param workingDirPath - The path to the working directory
  * @param fs - File system interface
  * @param ai - AI model interface
  * @returns The develop result with the applied edits
  */
 export async function develop(
-  featureName: string,
-  config: CoreConfig,
+  workingDirPath: string,
   fs: FileSystem,
   ai: AIModel
 ): Promise<DevelopResult> {
   // Gather context (including review if it exists)
-  const context = await gatherFeatureContext(featureName, config, fs);
+  const context = await gatherWorkingDirContext(workingDirPath, fs);
 
   // Generate edits using AI
   const edits = await ai.generateEdits(context);
@@ -45,7 +42,7 @@ export async function develop(
   }
 
   return {
-    featureName,
+    workingDirName: basename(workingDirPath),
     edits,
   };
 }

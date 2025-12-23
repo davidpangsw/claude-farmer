@@ -11,7 +11,7 @@
  */
 
 import { execSync } from "child_process";
-import { join } from "path";
+import { join, basename } from "path";
 import { review } from "../../tasks/review/index.js";
 import { develop } from "../../tasks/develop/index.js";
 import type { FileSystem, AIModel, CoreConfig } from "../../types.js";
@@ -21,19 +21,19 @@ export interface PatchOptions {
 }
 
 export interface PatchResult {
-  featureName: string;
+  workingDirName: string;
   iterations: number;
 }
 
 /**
- * Executes a shell script in the feature's scripts directory.
+ * Executes a shell script in the scripts directory.
  */
 function executeScript(
   scriptName: string,
-  featurePath: string,
+  scriptsDir: string,
   projectRoot: string
 ): void {
-  const scriptPath = join(featurePath, "scripts", scriptName);
+  const scriptPath = join(scriptsDir, scriptName);
   execSync(`bash "${scriptPath}"`, {
     cwd: projectRoot,
     stdio: "inherit",
@@ -44,46 +44,45 @@ function executeScript(
  * Runs one iteration of the patch workflow.
  */
 async function runPatchIteration(
-  featureName: string,
-  config: CoreConfig,
+  workingDirPath: string,
   fs: FileSystem,
   ai: AIModel
 ): Promise<void> {
   // Perform Review
-  await review(featureName, config, fs, ai);
+  await review(workingDirPath, fs, ai);
 
   // Perform Develop
-  await develop(featureName, config, fs, ai);
+  await develop(workingDirPath, fs, ai);
 }
 
 /**
- * Executes the patch command for a feature.
+ * Executes the patch command for a working directory.
  */
 export async function patch(
-  featureName: string,
+  workingDirPath: string,
+  scriptsDir: string,
   config: CoreConfig,
   fs: FileSystem,
   ai: AIModel,
   options: PatchOptions = {}
 ): Promise<PatchResult> {
-  const featurePath = join(config.featuresDir, featureName);
   let iterations = 0;
 
   do {
     // Execute git-patch-checkout.sh
-    executeScript("git-patch-checkout.sh", featurePath, config.projectRoot);
+    executeScript("git-patch-checkout.sh", scriptsDir, config.projectRoot);
 
     // Run review and develop
-    await runPatchIteration(featureName, config, fs, ai);
+    await runPatchIteration(workingDirPath, fs, ai);
 
     // Execute git-patch-complete.sh
-    executeScript("git-patch-complete.sh", featurePath, config.projectRoot);
+    executeScript("git-patch-complete.sh", scriptsDir, config.projectRoot);
 
     iterations++;
   } while (!options.once);
 
   return {
-    featureName,
+    workingDirName: basename(workingDirPath),
     iterations,
   };
 }

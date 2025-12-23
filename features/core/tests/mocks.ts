@@ -2,7 +2,7 @@
  * Mock implementations for testing.
  */
 
-import type { FileSystem, AIModel, FeatureContext, FileEdit, SummaryFile } from "../types.js";
+import type { FileSystem, AIModel, WorkingDirContext, FileEdit } from "../types.js";
 
 /**
  * In-memory file system mock for testing.
@@ -69,53 +69,31 @@ export class MockFileSystem implements FileSystem {
  * Mock AI model for testing.
  */
 export class MockAIModel implements AIModel {
-  private researchResponse: string;
   private reviewResponse: string;
   private editsResponse: FileEdit[];
-  private summaryResponse: SummaryFile[];
 
   constructor(
     reviewResponse: string = "# Review\n\nNo suggestions.",
-    editsResponse: FileEdit[] = [],
-    researchResponse: string = "# Research\n\nNo findings.",
-    summaryResponse: SummaryFile[] = []
+    editsResponse: FileEdit[] = []
   ) {
-    this.researchResponse = researchResponse;
     this.reviewResponse = reviewResponse;
     this.editsResponse = editsResponse;
-    this.summaryResponse = summaryResponse;
   }
 
-  async generateResearch(context: FeatureContext): Promise<string> {
-    return this.researchResponse;
-  }
-
-  async generateReview(context: FeatureContext): Promise<string> {
+  async generateReview(context: WorkingDirContext): Promise<string> {
     return this.reviewResponse;
   }
 
-  async generateEdits(context: FeatureContext): Promise<FileEdit[]> {
+  async generateEdits(context: WorkingDirContext): Promise<FileEdit[]> {
     return this.editsResponse;
   }
 
-  async generateSummary(context: FeatureContext): Promise<SummaryFile[]> {
-    return this.summaryResponse;
-  }
-
   // Test helper methods
-  setResearchResponse(response: string): void {
-    this.researchResponse = response;
-  }
-
   setReviewResponse(response: string): void {
     this.reviewResponse = response;
   }
 
   setEditsResponse(edits: FileEdit[]): void {
     this.editsResponse = edits;
-  }
-
-  setSummaryResponse(files: SummaryFile[]): void {
-    this.summaryResponse = files;
   }
 }

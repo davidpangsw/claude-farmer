@@ -1,5 +1,5 @@
 /**
- * Core types for the claude-farmer feature system.
+ * Core types for the claude-farmer system.
  */
 
 /**
@@ -11,31 +11,21 @@ export interface FileContent {
 }
 
 /**
- * Context gathered for reviewing or developing a feature.
+ * Context gathered for reviewing or developing a working directory.
  */
-export interface FeatureContext {
-  featureName: string;
-  featurePath: string;
+export interface WorkingDirContext {
+  workingDirName: string;
+  workingDirPath: string;
   goal: FileContent;
-  research?: FileContent;
   review?: FileContent;
   sourceFiles: FileContent[];
-}
-
-/**
- * Result of a research operation.
- */
-export interface ResearchResult {
-  featureName: string;
-  researchPath: string;
-  content: string;
 }
 
 /**
  * Result of a review operation.
  */
 export interface ReviewResult {
-  featureName: string;
+  workingDirName: string;
   reviewPath: string;
   content: string;
 }
@@ -52,27 +42,8 @@ export interface FileEdit {
  * Result of a develop operation.
  */
 export interface DevelopResult {
-  featureName: string;
+  workingDirName: string;
   edits: FileEdit[];
-}
-
-/**
- * A summary file to be written.
- */
-export interface SummaryFile {
-  /** Filename (not full path) */
-  filename: string;
-  /** File content */
-  content: string;
-}
-
-/**
- * Result of a summary operation.
- */
-export interface SummaryResult {
-  featureName: string;
-  summaryDir: string;
-  files: SummaryFile[];
 }
 
 /**
@@ -93,25 +64,16 @@ export interface FileSystem {
  */
 export interface AIModel {
   /**
-   * Generate research based on the provided context.
-   * This may involve web searches and gathering external information.
-   */
-  generateResearch(context: FeatureContext): Promise<string>;
-
-  /**
    * Generate a review based on the provided context.
+   * Includes research via web search, then generates improvement suggestions.
    */
-  generateReview(context: FeatureContext): Promise<string>;
+  generateReview(context: WorkingDirContext): Promise<string>;
 
   /**
    * Generate code edits based on the provided context.
+   * Implements GOAL requirements and addresses REVIEW feedback.
    */
-  generateEdits(context: FeatureContext): Promise<FileEdit[]>;
-
-  /**
-   * Generate summary files based on the provided context.
-   */
-  generateSummary(context: FeatureContext): Promise<SummaryFile[]>;
+  generateEdits(context: WorkingDirContext): Promise<FileEdit[]>;
 }
 
 /**
@@ -119,5 +81,4 @@ export interface AIModel {
  */
 export interface CoreConfig {
   projectRoot: string;
-  featuresDir: string;
 }

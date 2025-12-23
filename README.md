@@ -16,27 +16,13 @@ Then either:
 
 ## Usage
 
-### 1. Structure your working directory
+### 1. (Optional) Organize your project for optimal farming
 
-A farmer works on a single **working directory**. It should contain:
-
-```
-<working_directory>/
-└── claude-farmer/
-    ├── GOAL.md       # Human-written specification (do not let AI edit this)
-    └── docs/         # Markdown files for AI to read/write
-```
-
-### 2. (Optional) Organize your project for optimal farming
-
-If you want to fully utilize the farmer, consider organizing your project like this:
+If you want to fully utilize Claude Farmer in your project, consider organizing your project like this:
 
 ```
 project/
 ├── features/<feature_name>/  # Let farmer use this as working directory
-│   ├── claude-farmer/
-│   │   ├── GOAL.md
-│   │   └── docs/
 │   └── tests/                # Unit tests for this feature
 ├── tests/                    # Integration tests that orchestrate features
 └── ...                       # build/bin/dist files
@@ -45,51 +31,64 @@ project/
 Each feature is standalone:
 - No knowledge about anything outside the feature folder
 - All dependencies must be prototyped as interfaces within the folder
-- Unit tests are placed inside each feature because the farmer only reads within its working directory
+- Unit tests are placed inside each feature because Claude Farmer only reads within its working directory
+- Note that a feature could still have external dependencies to import.
 
-### 3. Ensure clean git status
+### 2. Structure your working directory
 
-The farmer checks out a feature branch (called `<branch_name>`, default: `features/<working_directory_name>`) from the trunk branch. Requirements:
-- No uncommitted changes or untracked files
-- The feature branch either doesn't exist (starts fresh at `v0.0.0`), or has a version tag `v<major>.<minor>.<patch>` on its latest commit
+Claude Farmer works on a single **working directory**. If following section 1's structure, then set your working directory to `project/features/<feature_name>/`. It should contain:
 
-### 4. Run the farmer
+```
+<working_directory>/
+└── claude-farmer/
+    ├── GOAL.md       # Human-written specification (do not let AI edit this)
+    └── docs/         # Auto-generated markdown files
+```
+
+### 3. Review your git status
+The farmer will patch your current branch:
+- Make sure no uncommitted changes or untracked files.
+- If you don't have a dedicated branch yet, it is highly recommended to create one for Claude Farmer to work on.
+  - For example, if you follows section 1's structure, you may use `features/<feature_name>` as `<branch_name>`, and run `git checkout -b <branch_name>`
+
+### 4. Set up your GOAL.md
+- You need to set up your `GOAL.md`, create it under `claude-farmer/`.
+  - Specify your goal. It could be anything. You may follow the template in `templates/GOAL.md` in this project.
+
+
+### 5. Let farmer patch your working directory
 
 ```bash
-claude-farmer patch [working_directory]
+claude-farmer patch [working_directory]  # defaults to current directory
 ```
 
 The `patch` command:
-1. Checks out a new subbranch `<branch_name>/v<major>.<minor>.<patch+1>` from the feature branch
-2. Performs **Review** - reads `claude-farmer/GOAL.md`, researches best practices via web search, and generates improvement suggestions to `claude-farmer/docs/REVIEW.md`
-3. Performs **Develop** - implements `claude-farmer/GOAL.md` requirements and addresses review feedback by editing source code
-4. Commits, merges back to feature branch, and tags the new version
+1. Performs **Review** - reads `claude-farmer/GOAL.md`, researches best practices via web search, and generates improvement suggestions to `claude-farmer/docs/REVIEW.md`
+2. Performs **Develop** - implements `claude-farmer/GOAL.md` requirements and addresses review feedback by editing source code
+3. Commits with a meaningful message
 
-By default, this loops for iterative improvement. Use `--once` to run a single iteration.
+By default, this loops forever for iterative improvement until user stops it. Use `--once` to run a single iteration.
 
 Options:
-- `--trunk <branch>` - Trunk branch to branch from (default: `develop`)
-- `--checkout <branch>` - Feature branch to work on (default: `features/<working_directory_name>`)
 - `--once` - Run once instead of looping
 
-### Recovery from failures
+### 6a. Recovery from failures
 
-If the farmer fails mid-iteration (e.g., network error, insufficient tokens), you can recover:
+If Claude Farmer fails mid-iteration (e.g., network error, insufficient tokens), you can run `patch` again. If it doesn't work, there may be some problem in your git status, go back to step 3.
 
-```bash
-# Check the current state
-git status
-git branch
+### 6b. Manual changes on your GOAL.md or other feature files
+- If you want manual changes, like:
+  - Installing external dependencies for Claude Farmer to work better
+  - Fix your GOAL.md
+  - Hint or comment in GOAL.md, source code, or any other files to help Claude Farmer
+  - Adding customized files or classes that help Claude Farmer work better
 
-# Option 1: Discard the failed subbranch and retry
-git checkout <branch_name>
-git branch -D <branch_name>/v<version>   # delete the failed subbranch
-claude-farmer patch [working_directory]
+- Steps:
+  - Stop the corresponding Claude Farmer instance
+  - Make and commit as many changes as you want
+  - Run `patch` again (step 5)
 
-# Option 2: Continue manually from where it left off
-git diff                                  # review uncommitted changes
-git add . && git commit -m "manual fix"
-git checkout <branch_name>
-git merge <branch_name>/v<version>
-git tag v<version>
-```
+### 6c. It works smoothly
+- Good to know, go sleep.
+
+### 7. Once you are familiar with the flow, run the farmers in parallel and enjoy your farm! (And watch your tokens burn)
