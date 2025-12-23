@@ -1,172 +1,132 @@
 /**
  * Logging utility for claude-farmer iterations.
- *
- * Creates timestamped log files in `<working_dir>/claude-farmer/logs/`
- * and maintains rotation to keep only the last 100 iterations.
- *
- * Logs are written IN REAL TIME - each log line is immediately appended to the file.
+ * Uses pino for logging and rotating-file-stream for file rotation per GOAL.md.
  */
 
-import { writeFile, appendFile, mkdir, unlink } from "fs/promises";
-import { glob } from "glob";
+import pino from "pino";
+import rfs from "rotating-file-stream";
+import { mkdirSync } from "fs";
 import { join } from "path";
 
-const MAX_LOG_FILES = 100;
+const MAX_LOG_FILES = 30;
 const LOGS_DIR = "claude-farmer/logs";
+const MAX_CACHE_SIZE = 10;
+
+interface CachedStream {
+  stream: rfs.RotatingFileStream;
+  iterationCount: number;
+  lastAccessed: number;
+}
+
+// Cache streams per logs directory to maintain rotation tracking across iterations
+const streamCache = new Map<string, CachedStream>();
 
 /**
- * Generates a timestamp string in YYYYMMDD_HHmmss format.
+ * Format current OS time as YYYYMMDD_HHmmss.
  */
-function getTimestamp(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  const hours = String(now.getHours()).padStart(2, "0");
-  const minutes = String(now.getMinutes()).padStart(2, "0");
-  const seconds = String(now.getSeconds()).padStart(2, "0");
+function formatTimestamp(date: Date): string {
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  const seconds = pad(date.getSeconds());
   return `${year}${month}${day}_${hours}${minutes}${seconds}`;
 }
 
 /**
- * Logger for a single iteration.
- * Writes logs in real-time - each log call immediately appends to the file.
+ * Evict least recently used entries when cache exceeds max size.
  */
-export class IterationLogger {
-  private logPath: string;
-  private startTime: Date;
-  private initialized: boolean = false;
+function evictLRU(): void {
+  if (streamCache.size >= MAX_CACHE_SIZE) {
+    // Find and remove least recently accessed entries
+    const entries = Array.from(streamCache.entries());
+    entries.sort((a, b) => a[1].lastAccessed - b[1].lastAccessed);
 
-  constructor(
-    private workingDirPath: string,
-    private iteration: number
-  ) {
-    this.startTime = new Date();
-    const timestamp = getTimestamp();
-    this.logPath = join(this.workingDirPath, LOGS_DIR, `${timestamp}.log`);
-  }
-
-  /**
-   * Ensures the log file is initialized (creates directory and file).
-   */
-  private async ensureInitialized(): Promise<void> {
-    if (this.initialized) return;
-
-    const logsDir = join(this.workingDirPath, LOGS_DIR);
-    await mkdir(logsDir, { recursive: true });
-
-    // Write initial message
-    const timestamp = this.startTime.toISOString();
-    const message = `[${timestamp}] === Iteration ${this.iteration} started at ${timestamp} ===\n`;
-    await writeFile(this.logPath, message, "utf-8");
-
-    this.initialized = true;
-  }
-
-  /**
-   * Logs a message with timestamp. Writes immediately to file.
-   */
-  async log(message: string): Promise<void> {
-    await this.ensureInitialized();
-    const timestamp = new Date().toISOString();
-    const line = `[${timestamp}] ${message}\n`;
-    await appendFile(this.logPath, line, "utf-8");
-  }
-
-  /**
-   * Logs the review task completion.
-   */
-  async logReview(reviewPath: string, contentLength: number): Promise<void> {
-    await this.log(`Review completed: ${reviewPath} (${contentLength} chars)`);
-  }
-
-  /**
-   * Logs the develop task completion.
-   */
-  async logDevelop(edits: Array<{ path: string; content: string }>): Promise<void> {
-    await this.log(`Develop completed: ${edits.length} file(s) edited`);
-    for (const edit of edits) {
-      await this.log(`  - ${edit.path} (${edit.content.length} chars)`);
-    }
-  }
-
-  /**
-   * Logs commit information.
-   */
-  async logCommit(message: string): Promise<void> {
-    await this.log(`Committed: ${message}`);
-  }
-
-  /**
-   * Logs that no changes were committed.
-   */
-  async logNoChanges(): Promise<void> {
-    await this.log("No changes to commit");
-  }
-
-  /**
-   * Logs a sleep/backoff event.
-   */
-  async logSleep(durationMs: number): Promise<void> {
-    const seconds = Math.round(durationMs / 1000);
-    const minutes = Math.round(durationMs / 60000);
-    const display = durationMs >= 60000 ? `${minutes} minute(s)` : `${seconds} second(s)`;
-    await this.log(`Sleeping for ${display} before retry...`);
-  }
-
-  /**
-   * Logs an error.
-   */
-  async logError(error: string): Promise<void> {
-    await this.log(`ERROR: ${error}`);
-  }
-
-  /**
-   * Finalizes the log and performs rotation.
-   */
-  async finalize(): Promise<string> {
-    const endTime = new Date();
-    const duration = endTime.getTime() - this.startTime.getTime();
-    await this.log(`=== Iteration ${this.iteration} completed in ${duration}ms ===`);
-
-    // Rotate logs - keep only the last MAX_LOG_FILES
-    const logsDir = join(this.workingDirPath, LOGS_DIR);
-    await this.rotateLogs(logsDir);
-
-    return this.logPath;
-  }
-
-  /**
-   * Removes old log files, keeping only the most recent MAX_LOG_FILES.
-   */
-  private async rotateLogs(logsDir: string): Promise<void> {
-    try {
-      const logFiles = await glob(`${logsDir}/*.log`, { nodir: true, absolute: true });
-
-      if (logFiles.length <= MAX_LOG_FILES) {
-        return;
-      }
-
-      // Sort by filename (which includes timestamp) - oldest first
-      logFiles.sort();
-
-      // Delete oldest files
-      const filesToDelete = logFiles.slice(0, logFiles.length - MAX_LOG_FILES);
-      for (const file of filesToDelete) {
-        await unlink(file);
-      }
-    } catch {
-      // Ignore rotation errors - logging should not break the main workflow
+    const toEvict = entries.slice(0, entries.length - MAX_CACHE_SIZE + 1);
+    for (const [key, cached] of toEvict) {
+      cached.stream.end();
+      streamCache.delete(key);
     }
   }
 }
 
 /**
- * Creates a new iteration logger.
+ * Get or create a rotating file stream for the given logs directory.
+ * Rotates the stream for each new iteration to create a new timestamped file.
  */
-export function createIterationLogger(
-  workingDirPath: string,
-  iteration: number
-): IterationLogger {
+function getOrCreateStream(logsDir: string, iteration: number): rfs.RotatingFileStream {
+  let cached = streamCache.get(logsDir);
+
+  if (!cached) {
+    // Evict old entries if cache is full
+    evictLRU();
+
+    // Create filename generator that uses OS timestamps
+    const generator = (time: Date | null): string => {
+      const now = time || new Date();
+      return `${formatTimestamp(now)}.log`;
+    };
+
+    const stream = rfs.createStream(generator, {
+      path: logsDir,
+      maxFiles: MAX_LOG_FILES,
+    });
+
+    // Clean up cache when stream closes to prevent memory leak
+    stream.on("close", () => {
+      streamCache.delete(logsDir);
+    });
+
+    cached = { stream, iterationCount: iteration, lastAccessed: Date.now() };
+    streamCache.set(logsDir, cached);
+  } else if (iteration > cached.iterationCount) {
+    // New iteration - rotate to create a new timestamped file
+    cached.stream.rotate();
+    cached.iterationCount = iteration;
+    cached.lastAccessed = Date.now();
+  } else {
+    // Update last accessed time
+    cached.lastAccessed = Date.now();
+  }
+
+  return cached.stream;
+}
+
+export class IterationLogger {
+  private logger: pino.Logger;
+
+  constructor(workingDirPath: string, private iteration: number) {
+    const logsDir = join(workingDirPath, LOGS_DIR);
+    mkdirSync(logsDir, { recursive: true });
+
+    const stream = getOrCreateStream(logsDir, iteration);
+
+    // Create pino logger writing to the rotating stream
+    // Include timestamp in log messages per GOAL.md
+    // Use sync: true to ensure real-time streaming without buffering per GOAL.md
+    this.logger = pino(
+      { timestamp: pino.stdTimeFunctions.isoTime, sync: true },
+      stream
+    );
+
+    this.logger.info(`=== Iteration ${iteration} started ===`);
+  }
+
+  log(message: string): void {
+    this.logger.info(message);
+  }
+
+  error(message: string): void {
+    this.logger.error(message);
+  }
+
+  finalize(): void {
+    this.logger.info(`=== Iteration ${this.iteration} completed ===`);
+  }
+}
+
+export function createIterationLogger(workingDirPath: string, iteration: number): IterationLogger {
   return new IterationLogger(workingDirPath, iteration);
 }

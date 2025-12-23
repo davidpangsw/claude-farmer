@@ -44,6 +44,8 @@ export interface FileEdit {
 export interface DevelopResult {
   workingDirName: string;
   edits: FileEdit[];
+  /** Security warnings (e.g., path traversal attempts) */
+  warnings?: string[];
 }
 
 /**

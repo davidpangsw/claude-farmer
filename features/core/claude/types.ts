@@ -10,7 +10,7 @@ export interface ClaudeCodeOptions {
   prompt: string;
   /** Working directory for the command */
   cwd?: string;
-  /** Whether to use ultrathink mode (default: true) */
+  /** Whether to use ultrathink mode (default: false) */
   ultrathink?: boolean;
   /** Model to use (default: uses Claude Code's default) */
   model?: string;

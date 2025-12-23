@@ -14,3 +14,9 @@ export { ClaudeCodeAI } from "./claude/index.js";
 // Commands (exposed outside of the feature)
 export { patch } from "./commands/patch/index.js";
 export type { PatchOptions, PatchResult } from "./commands/patch/index.js";
+
+export { develop } from "./commands/develop/index.js";
+export type { DevelopOptions, DevelopCommandResult } from "./commands/develop/index.js";
+
+// Re-export types needed by consumers
+export type { DevelopResult, FileEdit } from "./types.js";
