@@ -309,16 +309,10 @@ export class ClaudeCodeAI implements AIModel {
       throw new Error(`Claude Code failed: ${result.output}`);
     }
 
-    // Debug: log raw output for troubleshooting
-    console.log("[generateEdits] Raw output length:", result.output.length);
-    console.log("[generateEdits] Raw output (first 2000 chars):", result.output.slice(0, 2000));
-
     // Parse JSON from output using forgiving parsing
     const edits = parseFileEditsFromOutput(result.output);
-    console.log("[generateEdits] Parsed edits:", edits === null ? "null" : `${edits.length} edits`);
     if (edits === null) {
       // No edits found - return empty array (not an error)
-      console.log("[generateEdits] No valid edits parsed from output");
       return [];
     }
     return edits;

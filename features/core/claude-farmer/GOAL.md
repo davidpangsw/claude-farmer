@@ -28,7 +28,7 @@ Tasks are internal building blocks. Do not expose them outside this module. Plea
 | Task | Inputs | Outputs |
 |------|--------|---------|
 | **Review** | GOAL.md, source code | `$cf/docs/REVIEW.md` |
-| **Develop** | GOAL.md, REVIEW.md, source code | Code edits in `$wd`, `$cf/docs/DEVELOP.md`  |
+| **Develop** | GOAL.md, REVIEW.md, source code | Code edits in `$wd`, `$cf/docs/DEVELOP.json`  |
 
 ### Review Task
 
@@ -78,7 +78,7 @@ One-line assessment.
 2. Reads REVIEW.md for improvement suggestions
 3. Reads source code
 4. Implements the suggestions from REVIEW.md
-5. Edits code directly in `$wd`
+5. Generate an additional DEVELOP.json to dump the file edits
 
 ## Exposed API
 
@@ -100,6 +100,18 @@ Only expose the `patch()` method. Do not expose tasks or any other functions.
 - **Never terminate automatically**, even if no improvements found
 - When no improvements found: exponential backoff sleep (1 min → 2 min → 4 min → ... → max 2 hours)
 
+### develop(options)
+**Options:**
+- `once: boolean` - Run single iteration (default: true)
+- `ultrathink: boolean` - Enable ultrathink mode (default: false)
+
+**Workflow per iteration:**
+1. Run Develop task
+
+**Looping behavior:**
+- If `once: false`, loop forever until user stops (Ctrl+C)
+    - When no improvements found: exponential backoff sleep (1 min → 2 min → 4 min → ... → max 2 hours)
+
 ## AI Backend
 
 - Implementation lives in `claude/` subdirectory
@@ -110,6 +122,7 @@ Only expose the `patch()` method. Do not expose tasks or any other functions.
 
 - Log each iteration to `$cf/logs/YYYYMMDD_HHmmss.log`. Where the datetime should operating system time
 - Log message also should use operating system time.
+- Please make sure the log file name is correct.
 - Keep only last 30 log files
 - Stream logs in real-time (no buffering)
 - Use a logging library (do not implement custom logging)

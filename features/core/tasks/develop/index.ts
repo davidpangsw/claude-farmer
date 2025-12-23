@@ -5,7 +5,7 @@
  * and the relevant source code to implement requirements and address feedback.
  */
 
-import type { DevelopResult, AIModel } from "../../types.js";
+import type { DevelopResult, AIModel, FileEdit } from "../../types.js";
 import { gatherWorkingDirContext } from "../../context.js";
 import { isPathWithinWorkingDir } from "../../utils/index.js";
 import { writeFile, mkdir } from "fs/promises";
@@ -25,8 +25,8 @@ export async function develop(
   const edits = await ai.generateEdits(context);
 
   // Filter and apply edits
-  const safeEdits = [];
-  let hasDevelopMd = false;
+  const safeEdits: FileEdit[] = [];
+  let hasDevelopJson = false;
 
   for (const edit of edits) {
     // Validate path is within working directory
@@ -39,9 +39,9 @@ export async function develop(
     const absolutePath = resolve(workingDirPath, edit.path);
     safeEdits.push({ ...edit, path: absolutePath });
 
-    // Track if DEVELOP.md is included
-    if (edit.path.endsWith("DEVELOP.md")) {
-      hasDevelopMd = true;
+    // Track if DEVELOP.json is included
+    if (edit.path.endsWith("DEVELOP.json")) {
+      hasDevelopJson = true;
     }
 
     // Ensure parent directory exists
@@ -51,22 +51,21 @@ export async function develop(
     await writeFile(absolutePath, edit.content, "utf-8");
   }
 
-  // Generate fallback DEVELOP.md if AI didn't include one
-  if (!hasDevelopMd && safeEdits.length > 0) {
-    const developMdPath = join(workingDirPath, "claude-farmer", "docs", "DEVELOP.md");
-    const fileList = safeEdits.map(e => `- ${basename(e.path)}`).join("\n");
-    const content = `# Development Log
+  // Generate fallback DEVELOP.json if AI didn't include one
+  if (!hasDevelopJson && safeEdits.length > 0) {
+    const developJsonPath = join(workingDirPath, "claude-farmer", "docs", "DEVELOP.json");
+    const editsSummary = safeEdits.map(e => ({
+      path: e.path,
+      size: e.content.length,
+    }));
+    const content = JSON.stringify({
+      changes: editsSummary,
+      problems: [],
+    }, null, 2);
 
-## Changes Made
-${fileList}
-
-## Problems Encountered
-None reported.
-`;
-
-    await mkdir(dirname(developMdPath), { recursive: true });
-    await writeFile(developMdPath, content, "utf-8");
-    safeEdits.push({ path: developMdPath, content });
+    await mkdir(dirname(developJsonPath), { recursive: true });
+    await writeFile(developJsonPath, content, "utf-8");
+    safeEdits.push({ path: developJsonPath, content });
   }
 
   return {

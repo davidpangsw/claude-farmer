@@ -4,7 +4,8 @@
  */
 
 import pino from "pino";
-import { mkdirSync, readdirSync, unlinkSync, statSync } from "fs";
+import { globSync } from "glob";
+import { mkdirSync, unlinkSync, statSync } from "fs";
 import { join } from "path";
 
 const MAX_LOG_FILES = 30;
@@ -12,22 +13,21 @@ const LOGS_DIR = "claude-farmer/logs";
 
 /**
  * Clean up old log files, keeping only the most recent ones.
+ * Uses glob library for file discovery.
  */
 function cleanupOldLogs(logsDir: string, maxFiles: number): void {
   try {
-    const files = readdirSync(logsDir)
-      .filter(f => f.endsWith(".log"))
+    const files = globSync("*.log", { cwd: logsDir })
       .map(f => ({
         name: f,
         time: statSync(join(logsDir, f)).mtimeMs,
       }))
       .sort((a, b) => b.time - a.time)
-      .slice(maxFiles)
-      .map(f => f.name);
+      .slice(maxFiles);
 
     for (const file of files) {
       try {
-        unlinkSync(join(logsDir, file));
+        unlinkSync(join(logsDir, file.name));
       } catch {
         // Ignore cleanup errors
       }
@@ -59,7 +59,7 @@ export class IterationLogger {
     const logsDir = join(workingDirPath, LOGS_DIR);
     mkdirSync(logsDir, { recursive: true });
 
-    // Clean up old log files
+    // Clean up old log files using glob library
     cleanupOldLogs(logsDir, MAX_LOG_FILES);
 
     // Generate filename with OS local time
@@ -67,8 +67,9 @@ export class IterationLogger {
     const logPath = join(logsDir, `${ts}.log`);
 
     // Create sync destination for real-time streaming (no buffering)
+    // Include timestamp in log messages per GOAL.md
     this.logger = pino(
-      { base: undefined },
+      { timestamp: pino.stdTimeFunctions.isoTime },
       pino.destination({ dest: logPath, sync: true })
     );
 

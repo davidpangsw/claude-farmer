@@ -18,7 +18,7 @@ Develop a feature by writing or editing code.
 2. Fix issues from REVIEW.md (if present)
 3. Write tests for new functionality
 4. Match existing code patterns
-5. Generate a DEVELOP.md to state what has been changed. And what problems you encounter during the process.
+5. Generate a JSON array of file edits, do not generate other text. Make sure the JSON array is not malformed.
 
 ## Guidelines
 
@@ -29,10 +29,10 @@ Develop a feature by writing or editing code.
 
 ## Output
 
-Return JSON array of file edits. IMPORTANT: You MUST include "claude-farmer/docs/DEVELOP.md" as one of the edits:
+Return JSON array of file edits. IMPORTANT: You MUST include "claude-farmer/docs/DEVELOP.json" as one of the edits:
 \`\`\`json
 [
-  {"path": "claude-farmer/docs/DEVELOP.md", "content": "# Development Log\\n\\n## Changes Made\\n- ...\\n\\n## Problems Encountered\\n- ..."},
+  {"path": "claude-farmer/docs/DEVELOP.json", "content": "{\\"changes\\": [...], \\"problems\\": [...]}"},
   {"path": "...", "content": "..."}
 ]
 \`\`\``;
