@@ -14,11 +14,14 @@ import {
   isRateLimitError,
   performBackoffSleep,
 } from "../../utils/index.js";
+import { ClaudeCodeAI } from "../../claude/index.js";
 import type { AIModel, DevelopResult } from "../../types.js";
 
 export interface DevelopOptions {
   /** Run once instead of looping (default: true) */
   once?: boolean;
+  /** Enable ultrathink mode (default: false) */
+  ultrathink?: boolean;
   /** @internal For testing - custom sleep function */
   _sleepFn?: (ms: number) => Promise<void>;
 }
@@ -31,17 +34,37 @@ export interface DevelopCommandResult {
 
 /**
  * Executes the develop command for a working directory.
+ * @param workingDirPath - Path to the working directory
+ * @param aiOrOptions - Either an AIModel instance (for testing) or DevelopOptions
+ * @param options - DevelopOptions (only used if second param is AIModel)
  */
 export async function develop(
   workingDirPath: string,
-  ai: AIModel,
-  options: DevelopOptions = {}
+  aiOrOptions?: AIModel | DevelopOptions,
+  options?: DevelopOptions
 ): Promise<DevelopCommandResult> {
+  // Handle flexible signature: develop(path, options) or develop(path, ai, options)
+  let ai: AIModel;
+  let opts: DevelopOptions;
+
+  if (aiOrOptions && typeof aiOrOptions === "object" && "generateEdits" in aiOrOptions) {
+    // Second param is AIModel
+    ai = aiOrOptions;
+    opts = options ?? {};
+  } else {
+    // Second param is options (or undefined)
+    opts = (aiOrOptions as DevelopOptions) ?? {};
+    ai = new ClaudeCodeAI({
+      cwd: workingDirPath,
+      ultrathink: opts.ultrathink ?? false,
+    });
+  }
+
   // Default to once=true per GOAL.md
-  const once = options.once ?? true;
+  const once = opts.once ?? true;
   let iterations = 0;
   let sleepMs = MIN_SLEEP_MS;
-  const sleep = options._sleepFn ?? defaultSleep;
+  const sleep = opts._sleepFn ?? defaultSleep;
   let lastResult: DevelopResult = { workingDirName: basename(workingDirPath), edits: [] };
   let currentLogger: IterationLogger | null = null;
   let shuttingDown = false;

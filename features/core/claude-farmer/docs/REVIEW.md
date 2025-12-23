@@ -1,49 +1,55 @@
-I don't have write permission. Here's the updated **REVIEW.md**:
+I don't have write permission to the file. Here's my updated REVIEW.md:
 
 ---
 
 # Review
 
 ## Summary
-Well-implemented module meeting core GOAL.md requirements; one bug found where ultrathink options are declared but unused in commands.
+Well-structured module with good test coverage; primary issue is API signature mismatch with GOAL.md regarding ultrathink option.
 
 ## Goal Alignment
 - [x] Review task produces REVIEW.md with correct format
 - [x] Develop task produces code edits and DEVELOP.json
-- [x] patch() orchestrates review → develop → commit with looping (default: forever)
+- [x] patch() orchestrates review → develop → commit with looping
 - [x] develop() runs develop task (default: once=true)
 - [x] Exponential backoff (1 min → 2 hours) for no-changes and rate limits
 - [x] Never terminates automatically
 - [x] Logging: OS timestamps, sync streaming, 30-file rotation via pino + rotating-file-stream
 - [x] Path traversal protection with warnings
 - [x] Helpers in utils/ subdirectory
-- [x] ultrathink defaults to false
 - [x] Tasks not exposed outside module
-- [x] Stream cache with LRU eviction and close event cleanup
-- [x] `.git/**` excluded in IGNORE_PATTERNS
-- [x] Git operations use spawnSync with error checking
-- [x] Graceful shutdown handlers for SIGINT/SIGTERM (flag-based)
-- [x] Backoff helper extracted to utils/backoff.ts
+- [x] Graceful shutdown handlers for SIGINT/SIGTERM
+- [ ] **patch()/develop() ultrathink option**: GOAL.md specifies `ultrathink: boolean` as a command option, but current implementation passes AI as pre-constructed dependency
 
 ## Bugs
 
-### High Priority
-1. **Unused ultrathink options** (`commands/patch/index.ts:28`, `commands/develop/index.ts:21`): Both `PatchOptions` and `DevelopOptions` declare `ultrathink?: boolean` but the value is never used. The `ai` parameter is passed in already constructed. Either remove these options or wire them to configure the AI instance.
+### Medium Priority
+1. **API signature mismatch** (`commands/patch/index.ts:25-30`, `commands/develop/index.ts:19-24`): GOAL.md specifies `patch(options)` and `develop(options)` should accept `ultrathink: boolean`. Current implementation requires caller to pre-configure AI and pass it as a parameter. Either update GOAL.md to reflect dependency injection pattern, or refactor commands to accept ultrathink and construct AI internally.
 
 ## Clarifications Needed
-1. **Web search availability**: GOAL.md states "Researches best practices via web search" but Claude Code headless mode depends on user CLI configuration. Should the module document this as a prerequisite, or attempt to detect/warn if unavailable?
+1. **ultrathink option handling**: GOAL.md says commands accept `ultrathink` option, but current design injects AI as dependency. Which pattern is intended?
+2. **Web search availability**: GOAL.md states "Researches best practices via web search" but Claude Code headless mode depends on user CLI configuration. Should the module document this as a prerequisite, or attempt to detect/warn if unavailable?
 
 ## Suggested Improvements
 
 ### Medium Priority
-1. **Commit message uniqueness** (`commands/patch/index.ts:104-108`): Using `basename(e.path)` for commit messages may produce duplicates like "updated index.ts, index.ts" if files exist in different directories. Consider using relative paths from working directory.
+1. **Reconcile API with GOAL.md**: Either:
+   - Option A: Add `ultrathink` to PatchOptions/DevelopOptions and construct ClaudeCodeAI inside the commands
+   - Option B: Update GOAL.md to document that AI is passed as dependency (current implementation)
 
 ### Low Priority
-1. **Type comment mismatch** (`claude/types.ts:14`): Comment says "Whether to use ultrathink mode (default: true)" but `ClaudeCodeAI` constructor at `claude/index.ts:175` defaults to `false`. Update comment to match implementation.
+1. **Missing unit tests for patch command**: `commands/patch/index.ts` has E2E tests but no unit tests with mocked AI. Add tests similar to `rate-limit.test.ts` pattern to verify review→develop→commit flow without spawning claude CLI.
 
-2. **DEVELOP_PROMPT clarity** (`claude/prompts/develop.ts:26`): The instruction "Output only the JSON array" followed by a markdown code block example is slightly contradictory. Consider: "Output the JSON array in a markdown code block".
+2. **DEVELOP_PROMPT clarity** (`claude/prompts/develop.ts:26`): The instruction could be clearer - consider showing the expected format before the instruction rather than after.
 
 ## Next Steps
-1. Fix the unused ultrathink options bug (remove or implement)
-2. Decide on web search availability handling (clarification needed)
-3. Optional: Improve commit message uniqueness
+1. Decide on ultrathink option handling (clarification needed)
+2. Update either GOAL.md or command implementations to match
+3. Optional: Add unit tests for patch command
+
+---
+
+**Note:** The previous REVIEW.md had some inaccuracies:
+- Claimed "unused ultrathink options" but `PatchOptions`/`DevelopOptions` don't have ultrathink fields - the issue is they're **missing**, not unused
+- Claimed commit message uses `basename()` but it actually uses `relative()` (line 101), which already provides unique paths
+- Claimed type comment says "default: true" but `claude/types.ts:13` correctly says "default: false"

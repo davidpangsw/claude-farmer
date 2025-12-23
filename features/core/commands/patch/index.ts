@@ -20,11 +20,14 @@ import {
   isRateLimitError,
   performBackoffSleep,
 } from "../../utils/index.js";
+import { ClaudeCodeAI } from "../../claude/index.js";
 import type { AIModel } from "../../types.js";
 
 export interface PatchOptions {
-  /** Run once instead of looping */
+  /** Run once instead of looping (default: false) */
   once?: boolean;
+  /** Enable ultrathink mode (default: false) */
+  ultrathink?: boolean;
   /** @internal For testing - custom sleep function */
   _sleepFn?: (ms: number) => Promise<void>;
 }
@@ -36,15 +39,35 @@ export interface PatchResult {
 
 /**
  * Executes the patch command for a working directory.
+ * @param workingDirPath - Path to the working directory
+ * @param aiOrOptions - Either an AIModel instance (for testing) or PatchOptions
+ * @param options - PatchOptions (only used if second param is AIModel)
  */
 export async function patch(
   workingDirPath: string,
-  ai: AIModel,
-  options: PatchOptions = {}
+  aiOrOptions?: AIModel | PatchOptions,
+  options?: PatchOptions
 ): Promise<PatchResult> {
+  // Handle flexible signature: patch(path, options) or patch(path, ai, options)
+  let ai: AIModel;
+  let opts: PatchOptions;
+
+  if (aiOrOptions && typeof aiOrOptions === "object" && "generateReview" in aiOrOptions) {
+    // Second param is AIModel
+    ai = aiOrOptions;
+    opts = options ?? {};
+  } else {
+    // Second param is options (or undefined)
+    opts = (aiOrOptions as PatchOptions) ?? {};
+    ai = new ClaudeCodeAI({
+      cwd: workingDirPath,
+      ultrathink: opts.ultrathink ?? false,
+    });
+  }
+
   let iterations = 0;
   let sleepMs = MIN_SLEEP_MS;
-  const sleep = options._sleepFn ?? defaultSleep;
+  const sleep = opts._sleepFn ?? defaultSleep;
   let currentLogger: IterationLogger | null = null;
   let shuttingDown = false;
 
@@ -150,7 +173,7 @@ export async function patch(
           throw error;
         }
       }
-    } while (!options.once && !shuttingDown);
+    } while (!opts.once && !shuttingDown);
   } finally {
     // Clean up signal handlers
     process.off("SIGINT", shutdownHandler);
