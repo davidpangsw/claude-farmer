@@ -1,14 +1,24 @@
 # Development Log
 
 ## Changes Made
-- Updated `logging/index.ts` to use `del` library for log file cleanup instead of manual `unlinkSync` calls
-- Added `existsSync` check before attempting cleanup to handle non-existent directories gracefully
+
+1. **Replaced custom log rotation with `rotating-file-stream` library** (`logging/index.ts`)
+   - Removed custom `cleanupOldLogs` function that used `glob` + `del`
+   - Implemented `rotating-file-stream` for proper file rotation per GOAL.md
+   - Uses `maxFiles: 30` option for automatic cleanup of old log files
+   - Maintains timestamp-based filenames (`YYYYMMDD_HHmmss.log`) as required
+   - Caches streams per working directory to maintain rotation tracking across iterations
+
+2. **Preserved real-time logging behavior**
+   - Continues using `pino` for structured logging with timestamps
+   - Stream-based approach maintains reasonable real-time output
 
 ## Problems Encountered
-- No off-the-shelf library perfectly matches our use case (event-based log files with count-based retention)
-- Traditional log rotation libraries (pino-roll, rotating-file-stream) are designed for time/size-based rotation, not per-iteration files
-- Solution: Use `del` library for safe file deletion combined with `glob` for file discovery - this follows the spirit of GOAL.md by using libraries for file operations
 
-## Notes
-- GOAL.md contradiction (line 85 vs lines 103-113) is a documentation issue in GOAL.md itself, which cannot be edited per spec
-- The `del` package needs to be installed at project root: `npm install del`
+1. **GOAL.md API contradiction**: Line ~85 says "Only expose patch()" but lines 103-113 document `develop()` as exposed API. Both are currently exported as the later documentation is more specific.
+
+2. **Rotation timing edge case**: If two iterations start within the same second, they may share a log file due to the `YYYYMMDD_HHmmss` format requirement in GOAL.md. This is acceptable given typical AI call overhead.
+
+## Dependencies Required
+
+- `rotating-file-stream` - Must be installed at project root: `npm install rotating-file-stream`

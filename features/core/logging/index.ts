@@ -1,59 +1,66 @@
 /**
  * Logging utility for claude-farmer iterations.
- * Uses pino with sync destination for real-time logging.
- * Uses del library for log file cleanup per GOAL.md.
+ * Uses pino for logging and rotating-file-stream for file rotation per GOAL.md.
  */
 
 import pino from "pino";
-import { deleteSync } from "del";
-import { globSync } from "glob";
-import { mkdirSync, statSync, existsSync } from "fs";
+import rfs from "rotating-file-stream";
+import { mkdirSync } from "fs";
 import { join } from "path";
 
 const MAX_LOG_FILES = 30;
 const LOGS_DIR = "claude-farmer/logs";
 
-/**
- * Clean up old log files, keeping only the most recent ones.
- * Uses glob for file discovery and del library for safe deletion.
- */
-function cleanupOldLogs(logsDir: string, maxFiles: number): void {
-  try {
-    if (!existsSync(logsDir)) return;
-
-    const files = globSync("*.log", { cwd: logsDir })
-      .map(f => {
-        const fullPath = join(logsDir, f);
-        return {
-          path: fullPath,
-          time: statSync(fullPath).mtimeMs,
-        };
-      })
-      .sort((a, b) => b.time - a.time);
-
-    const toDelete = files.slice(maxFiles).map(f => f.path);
-
-    if (toDelete.length > 0) {
-      deleteSync(toDelete, { force: true });
-    }
-  } catch {
-    // Ignore cleanup errors
-  }
+interface CachedStream {
+  stream: rfs.RotatingFileStream;
+  iterationCount: number;
 }
+
+// Cache streams per logs directory to maintain rotation tracking across iterations
+const streamCache = new Map<string, CachedStream>();
 
 /**
  * Format current OS time as YYYYMMDD_HHmmss.
  */
-function formatTimestamp(): string {
-  const now = new Date();
+function formatTimestamp(date: Date): string {
   const pad = (n: number) => n.toString().padStart(2, "0");
-  const year = now.getFullYear();
-  const month = pad(now.getMonth() + 1);
-  const day = pad(now.getDate());
-  const hours = pad(now.getHours());
-  const minutes = pad(now.getMinutes());
-  const seconds = pad(now.getSeconds());
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  const seconds = pad(date.getSeconds());
   return `${year}${month}${day}_${hours}${minutes}${seconds}`;
+}
+
+/**
+ * Get or create a rotating file stream for the given logs directory.
+ * Rotates the stream for each new iteration to create a new timestamped file.
+ */
+function getOrCreateStream(logsDir: string, iteration: number): rfs.RotatingFileStream {
+  let cached = streamCache.get(logsDir);
+
+  if (!cached) {
+    // Create filename generator that uses OS timestamps
+    const generator = (time: Date | null): string => {
+      const now = time || new Date();
+      return `${formatTimestamp(now)}.log`;
+    };
+
+    const stream = rfs.createStream(generator, {
+      path: logsDir,
+      maxFiles: MAX_LOG_FILES,
+    });
+
+    cached = { stream, iterationCount: iteration };
+    streamCache.set(logsDir, cached);
+  } else if (iteration > cached.iterationCount) {
+    // New iteration - rotate to create a new timestamped file
+    cached.stream.rotate();
+    cached.iterationCount = iteration;
+  }
+
+  return cached.stream;
 }
 
 export class IterationLogger {
@@ -63,18 +70,13 @@ export class IterationLogger {
     const logsDir = join(workingDirPath, LOGS_DIR);
     mkdirSync(logsDir, { recursive: true });
 
-    // Clean up old log files using del library
-    cleanupOldLogs(logsDir, MAX_LOG_FILES);
+    const stream = getOrCreateStream(logsDir, iteration);
 
-    // Generate filename with OS local time
-    const ts = formatTimestamp();
-    const logPath = join(logsDir, `${ts}.log`);
-
-    // Create sync destination for real-time streaming (no buffering)
+    // Create pino logger writing to the rotating stream
     // Include timestamp in log messages per GOAL.md
     this.logger = pino(
       { timestamp: pino.stdTimeFunctions.isoTime },
-      pino.destination({ dest: logPath, sync: true })
+      stream
     );
 
     this.logger.info(`=== Iteration ${iteration} started ===`);
