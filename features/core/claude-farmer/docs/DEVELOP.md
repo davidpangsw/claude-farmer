@@ -2,23 +2,23 @@
 
 ## Changes Made
 
-1. **Replaced custom log rotation with `rotating-file-stream` library** (`logging/index.ts`)
-   - Removed custom `cleanupOldLogs` function that used `glob` + `del`
-   - Implemented `rotating-file-stream` for proper file rotation per GOAL.md
-   - Uses `maxFiles: 30` option for automatic cleanup of old log files
-   - Maintains timestamp-based filenames (`YYYYMMDD_HHmmss.log`) as required
-   - Caches streams per working directory to maintain rotation tracking across iterations
-
-2. **Preserved real-time logging behavior**
-   - Continues using `pino` for structured logging with timestamps
-   - Stream-based approach maintains reasonable real-time output
+1. **Fixed pino buffering issue** (`logging/index.ts:77-80`)
+   - Added `sync: true` to pino configuration to ensure real-time log streaming without buffering
+   - GOAL.md requires "Stream logs in real-time (no buffering)" - this was missing
 
 ## Problems Encountered
 
-1. **GOAL.md API contradiction**: Line ~85 says "Only expose patch()" but lines 103-113 document `develop()` as exposed API. Both are currently exported as the later documentation is more specific.
+1. **GOAL.md Contradiction** (not fixable by AI)
+   - Line ~85 says "Only expose patch()" but lines 103-113 document `develop()` as an exposed API
+   - The current implementation correctly exposes both `patch()` and `develop()` as documented in the API section
+   - This is a documentation inconsistency in GOAL.md that needs human clarification
+   - AI cannot edit GOAL.md per the spec: "Human-written spec (AI must not edit this file)"
 
-2. **Rotation timing edge case**: If two iterations start within the same second, they may share a log file due to the `YYYYMMDD_HHmmss` format requirement in GOAL.md. This is acceptable given typical AI call overhead.
+## Verification
 
-## Dependencies Required
-
-- `rotating-file-stream` - Must be installed at project root: `npm install rotating-file-stream`
+- All other items from REVIEW.md were already correctly implemented:
+  - DEVELOP.json generation ✓
+  - Timestamps in logs using OS time ✓
+  - Exponential backoff ✓
+  - Path traversal protection ✓
+  - Uses rotation library (rotating-file-stream) with maxFiles: 30 ✓

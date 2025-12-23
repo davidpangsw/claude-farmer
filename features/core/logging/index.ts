@@ -74,8 +74,9 @@ export class IterationLogger {
 
     // Create pino logger writing to the rotating stream
     // Include timestamp in log messages per GOAL.md
+    // Use sync: true to ensure real-time streaming without buffering per GOAL.md
     this.logger = pino(
-      { timestamp: pino.stdTimeFunctions.isoTime },
+      { timestamp: pino.stdTimeFunctions.isoTime, sync: true },
       stream
     );
 
