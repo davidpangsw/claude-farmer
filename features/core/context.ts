@@ -7,7 +7,7 @@ import type {
   FileContent,
   FileSystem,
 } from "./types.js";
-import { join, basename } from "path";
+import { join, basename, sep } from "path";
 
 /**
  * Gathers the context needed for reviewing or developing a working directory.
@@ -35,8 +35,8 @@ export async function gatherWorkingDirContext(
   const sourceFiles: FileContent[] = [];
   const tsFiles = await fs.listFiles(workingDirPath, "**/*.ts");
   for (const filePath of tsFiles) {
-    // Skip files in claude-farmer directory
-    if (!filePath.includes("/claude-farmer/")) {
+    // Skip files in claude-farmer directory (use sep for cross-platform)
+    if (!filePath.includes(`${sep}claude-farmer${sep}`)) {
       const content = await fs.readFile(filePath);
       sourceFiles.push({ path: filePath, content });
     }

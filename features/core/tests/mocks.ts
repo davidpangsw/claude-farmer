@@ -36,9 +36,12 @@ export class MockFileSystem implements FileSystem {
   }
 
   async listFiles(directory: string, pattern?: string): Promise<string[]> {
+    // Normalize directory to ensure consistent matching (with trailing separator)
+    const normalizedDir = directory.endsWith("/") ? directory : `${directory}/`;
     const results: string[] = [];
     for (const path of this.files.keys()) {
-      if (path.startsWith(directory)) {
+      // Check if file is within directory (handle both with and without trailing slash)
+      if (path.startsWith(normalizedDir) || path.startsWith(directory + "/")) {
         if (!pattern || pattern === "**/*.ts") {
           if (path.endsWith(".ts")) {
             results.push(path);

@@ -93,32 +93,57 @@ Return JSON array of file edits:
 \`\`\``;
 
 /**
+ * Type guard to validate FileEdit structure.
+ */
+function isValidFileEdit(obj: unknown): obj is FileEdit {
+  return (
+    typeof obj === "object" &&
+    obj !== null &&
+    typeof (obj as FileEdit).path === "string" &&
+    typeof (obj as FileEdit).content === "string"
+  );
+}
+
+/**
  * Runs Claude Code in headless mode with the given options.
+ *
+ * Note: Extended thinking is enabled by including "ultrathink" keyword
+ * in the prompt, not via CLI flag.
  */
 export async function runClaudeCode(
   options: ClaudeCodeOptions
 ): Promise<ClaudeCodeResult> {
-  const args = ["--print"];
-
-  if (options.ultrathink !== false) {
-    args.push("--ultrathink");
-  }
+  const args = ["-p"]; // -p for headless/print mode
 
   if (options.model) {
     args.push("--model", options.model);
   }
 
-  args.push(options.prompt);
+  // Enable extended thinking by prepending "ultrathink:" to the prompt
+  const prompt = options.ultrathink !== false
+    ? `ultrathink: ${options.prompt}`
+    : options.prompt;
+
+  args.push(prompt);
 
   return new Promise((resolve, reject) => {
     const proc = spawn("claude", args, {
       cwd: options.cwd,
       stdio: ["pipe", "pipe", "pipe"],
-      timeout: options.timeout,
     });
 
     let stdout = "";
     let stderr = "";
+    let killed = false;
+
+    // Implement timeout manually since spawn doesn't support it
+    let timeoutId: NodeJS.Timeout | undefined;
+    if (options.timeout) {
+      timeoutId = setTimeout(() => {
+        killed = true;
+        proc.kill("SIGTERM");
+      }, options.timeout);
+    }
 
     proc.stdout.on("data", (data) => {
       stdout += data.toString();
@@ -129,14 +154,24 @@ export async function runClaudeCode(
     });
 
     proc.on("close", (code) => {
-      resolve({
-        output: stdout || stderr,
-        exitCode: code ?? 1,
-        success: code === 0,
-      });
+      if (timeoutId) clearTimeout(timeoutId);
+      if (killed) {
+        resolve({
+          output: `Process timed out after ${options.timeout}ms`,
+          exitCode: 1,
+          success: false,
+        });
+      } else {
+        resolve({
+          output: stdout || stderr,
+          exitCode: code ?? 1,
+          success: code === 0,
+        });
+      }
     });
 
     proc.on("error", (err) => {
+      if (timeoutId) clearTimeout(timeoutId);
       reject(err);
     });
   });
@@ -220,12 +255,24 @@ export class ClaudeCodeAI implements AIModel {
       throw new Error(`Claude Code failed: ${result.output}`);
     }
 
-    // Parse JSON from output
-    const jsonMatch = result.output.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) {
+    // Parse JSON from output - find the last JSON array (most likely the actual response)
+    const jsonMatches = result.output.match(/\[[\s\S]*?\]/g);
+    if (!jsonMatches || jsonMatches.length === 0) {
       throw new Error("Could not parse file edits from Claude Code output");
     }
 
-    return JSON.parse(jsonMatch[0]) as FileEdit[];
+    // Try parsing from last match to first (last is most likely the actual output)
+    for (let i = jsonMatches.length - 1; i >= 0; i--) {
+      try {
+        const parsed = JSON.parse(jsonMatches[i]);
+        if (Array.isArray(parsed) && parsed.every(isValidFileEdit)) {
+          return parsed;
+        }
+      } catch {
+        // Try next match
+      }
+    }
+
+    throw new Error("Could not find valid file edits JSON in Claude Code output");
   }
 }

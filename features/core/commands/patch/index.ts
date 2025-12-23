@@ -36,21 +36,6 @@ function executeScript(scriptPath: string, cwd: string): void {
 }
 
 /**
- * Runs one iteration of the patch workflow.
- */
-async function runPatchIteration(
-  workingDirPath: string,
-  fs: FileSystem,
-  ai: AIModel
-): Promise<void> {
-  // Perform Review
-  await review(workingDirPath, fs, ai);
-
-  // Perform Develop
-  await develop(workingDirPath, fs, ai);
-}
-
-/**
  * Executes the patch command for a working directory.
  *
  * @param workingDirPath - The path to the working directory
@@ -74,12 +59,20 @@ export async function patch(
     executeScript(join(scriptsDir, "git-patch-checkout.sh"), workingDirPath);
 
     // Run review and develop
-    await runPatchIteration(workingDirPath, fs, ai);
+    const developResult = await develop(workingDirPath, fs, ai);
+
+    // Also run review for the next iteration (if looping)
+    await review(workingDirPath, fs, ai);
 
     // Commit changes
     executeScript(join(scriptsDir, "git-patch-complete.sh"), workingDirPath);
 
     iterations++;
+
+    // Stop if no edits were made (nothing more to do)
+    if (developResult.edits.length === 0) {
+      break;
+    }
   } while (!options.once);
 
   return {
