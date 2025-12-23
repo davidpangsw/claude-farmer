@@ -52,6 +52,7 @@ Workflow:
 3. Commit with meaningful message
 
 Default: Loop forever for iterative improvement until user stops it.
+- If no more improvement could be found, never terminate itself. Sleep for 1 minute, 2 minute, 4 minute, 8 minutes ..., (maxed at 24 hour.)
 
 ## AI Integration
 
