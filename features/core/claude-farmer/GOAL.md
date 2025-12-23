@@ -37,7 +37,7 @@ Tasks are not exposed outside of the feature.
 
 ## Command
 
-Tasks are building blocks orchestrated into commands.
+Tasks are building blocks orchestrated into commands. Commands are exposed to be used. Do not implement any command that is not specificed in this section.
 
 ### Patch Command
 
