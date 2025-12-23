@@ -10,10 +10,12 @@ import { join } from "path";
 
 const MAX_LOG_FILES = 30;
 const LOGS_DIR = "claude-farmer/logs";
+const MAX_CACHE_SIZE = 10;
 
 interface CachedStream {
   stream: rfs.RotatingFileStream;
   iterationCount: number;
+  lastAccessed: number;
 }
 
 // Cache streams per logs directory to maintain rotation tracking across iterations
@@ -34,6 +36,25 @@ function formatTimestamp(date: Date): string {
 }
 
 /**
+ * Evict least recently used entries when cache exceeds max size.
+ */
+function evictLRU(): void {
+  if (streamCache.size <= MAX_CACHE_SIZE) {
+    return;
+  }
+
+  // Find and remove least recently accessed entries
+  const entries = Array.from(streamCache.entries());
+  entries.sort((a, b) => a[1].lastAccessed - b[1].lastAccessed);
+
+  const toEvict = entries.slice(0, entries.length - MAX_CACHE_SIZE);
+  for (const [key, cached] of toEvict) {
+    cached.stream.end();
+    streamCache.delete(key);
+  }
+}
+
+/**
  * Get or create a rotating file stream for the given logs directory.
  * Rotates the stream for each new iteration to create a new timestamped file.
  */
@@ -41,6 +62,9 @@ function getOrCreateStream(logsDir: string, iteration: number): rfs.RotatingFile
   let cached = streamCache.get(logsDir);
 
   if (!cached) {
+    // Evict old entries if cache is full
+    evictLRU();
+
     // Create filename generator that uses OS timestamps
     const generator = (time: Date | null): string => {
       const now = time || new Date();
@@ -57,12 +81,16 @@ function getOrCreateStream(logsDir: string, iteration: number): rfs.RotatingFile
       streamCache.delete(logsDir);
     });
 
-    cached = { stream, iterationCount: iteration };
+    cached = { stream, iterationCount: iteration, lastAccessed: Date.now() };
     streamCache.set(logsDir, cached);
   } else if (iteration > cached.iterationCount) {
     // New iteration - rotate to create a new timestamped file
     cached.stream.rotate();
     cached.iterationCount = iteration;
+    cached.lastAccessed = Date.now();
+  } else {
+    // Update last accessed time
+    cached.lastAccessed = Date.now();
   }
 
   return cached.stream;

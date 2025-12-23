@@ -7,7 +7,7 @@
 
 import { basename } from "path";
 import { develop as developTask } from "../../tasks/develop/index.js";
-import { createIterationLogger } from "../../logging/index.js";
+import { createIterationLogger, IterationLogger } from "../../logging/index.js";
 import type { AIModel, DevelopResult } from "../../types.js";
 
 /** Minimum sleep duration: 1 minute */
@@ -51,66 +51,90 @@ export async function develop(
   let sleepMs = MIN_SLEEP_MS;
   const sleep = options._sleepFn ?? defaultSleep;
   let lastResult: DevelopResult = { workingDirName: basename(workingDirPath), edits: [] };
+  let currentLogger: IterationLogger | null = null;
 
-  do {
-    iterations++;
-    const logger = createIterationLogger(workingDirPath, iterations);
+  // Graceful shutdown handler
+  const shutdownHandler = () => {
+    if (currentLogger) {
+      currentLogger.error("Received shutdown signal");
+      currentLogger.finalize();
+    }
+    process.exit(0);
+  };
 
-    try {
-      lastResult = await developTask(workingDirPath, ai);
-      logger.log(`Develop completed: ${lastResult.edits.length} file(s) edited`);
-      for (const edit of lastResult.edits) {
-        logger.log(`  - ${edit.path} (${edit.content.length} chars)`);
-      }
+  process.on("SIGINT", shutdownHandler);
+  process.on("SIGTERM", shutdownHandler);
 
-      // Log security warnings if any
-      if (lastResult.warnings && lastResult.warnings.length > 0) {
-        for (const warning of lastResult.warnings) {
-          logger.error(`[SECURITY] ${warning}`);
+  try {
+    do {
+      iterations++;
+      const logger = createIterationLogger(workingDirPath, iterations);
+      currentLogger = logger;
+
+      try {
+        lastResult = await developTask(workingDirPath, ai);
+        logger.log(`Develop completed: ${lastResult.edits.length} file(s) edited`);
+        for (const edit of lastResult.edits) {
+          logger.log(`  - ${edit.path} (${edit.content.length} chars)`);
+        }
+
+        // Log security warnings if any
+        if (lastResult.warnings && lastResult.warnings.length > 0) {
+          for (const warning of lastResult.warnings) {
+            logger.error(`[SECURITY] ${warning}`);
+          }
+        }
+
+        if (lastResult.edits.length > 0) {
+          // Reset backoff on successful edits
+          sleepMs = MIN_SLEEP_MS;
+        } else if (!once) {
+          // No changes and looping - apply backoff
+          logger.log("No changes made");
+          const display = sleepMs >= 60000
+            ? `${Math.round(sleepMs / 60000)} minute(s)`
+            : `${Math.round(sleepMs / 1000)} second(s)`;
+          logger.log(`Sleeping for ${display} before retry...`);
+          logger.finalize();
+          currentLogger = null;
+          await sleep(sleepMs);
+          sleepMs = Math.min(sleepMs * 2, MAX_SLEEP_MS);
+          continue;
+        }
+
+        logger.finalize();
+        currentLogger = null;
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        logger.error(err.message);
+
+        // Handle rate limits with exponential backoff
+        if (
+          err.message.includes("Spending cap reached") ||
+          err.message.includes("You've hit your limit")
+        ) {
+          logger.log("Spending cap reached");
+          const display = sleepMs >= 60000
+            ? `${Math.round(sleepMs / 60000)} minute(s)`
+            : `${Math.round(sleepMs / 1000)} second(s)`;
+          logger.log(`Sleeping for ${display} before retry...`);
+          logger.finalize();
+          currentLogger = null;
+          await sleep(sleepMs);
+          sleepMs = Math.min(sleepMs * 2, MAX_SLEEP_MS);
+          continue;
+        } else {
+          logger.finalize();
+          currentLogger = null;
+          throw error;
         }
       }
-
-      if (lastResult.edits.length > 0) {
-        // Reset backoff on successful edits
-        sleepMs = MIN_SLEEP_MS;
-      } else if (!once) {
-        // No changes and looping - apply backoff
-        logger.log("No changes made");
-        const display = sleepMs >= 60000
-          ? `${Math.round(sleepMs / 60000)} minute(s)`
-          : `${Math.round(sleepMs / 1000)} second(s)`;
-        logger.log(`Sleeping for ${display} before retry...`);
-        logger.finalize();
-        await sleep(sleepMs);
-        sleepMs = Math.min(sleepMs * 2, MAX_SLEEP_MS);
-        continue;
-      }
-
-      logger.finalize();
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      logger.error(err.message);
-
-      // Handle rate limits with exponential backoff
-      if (
-        err.message.includes("Spending cap reached") ||
-        err.message.includes("You've hit your limit")
-      ) {
-        logger.log("Spending cap reached");
-        const display = sleepMs >= 60000
-          ? `${Math.round(sleepMs / 60000)} minute(s)`
-          : `${Math.round(sleepMs / 1000)} second(s)`;
-        logger.log(`Sleeping for ${display} before retry...`);
-        logger.finalize();
-        await sleep(sleepMs);
-        sleepMs = Math.min(sleepMs * 2, MAX_SLEEP_MS);
-        continue;
-      } else {
-        logger.finalize();
-        throw error;
-      }
-    }
-  } while (!once);
+    } while (!once);
+  } finally {
+    // Clean up signal handlers
+    process.off("SIGINT", shutdownHandler);
+    process.off("SIGTERM", shutdownHandler);
+  }
 
   return {
     workingDirName: basename(workingDirPath),
