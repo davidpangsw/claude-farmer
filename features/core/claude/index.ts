@@ -93,15 +93,146 @@ Return JSON array of file edits:
 \`\`\``;
 
 /**
- * Type guard to validate FileEdit structure.
+ * Type guard to validate FileEdit structure (lenient).
  */
 function isValidFileEdit(obj: unknown): obj is FileEdit {
-  return (
-    typeof obj === "object" &&
-    obj !== null &&
-    typeof (obj as FileEdit).path === "string" &&
-    typeof (obj as FileEdit).content === "string"
-  );
+  if (typeof obj !== "object" || obj === null) return false;
+  const edit = obj as Record<string, unknown>;
+  // Accept path or file as the path field
+  const path = edit.path ?? edit.file;
+  // Accept content or code as the content field
+  const content = edit.content ?? edit.code;
+  return typeof path === "string" && typeof content === "string";
+}
+
+/**
+ * Normalize a FileEdit object (handle alternative field names).
+ */
+function normalizeFileEdit(obj: unknown): FileEdit {
+  const edit = obj as Record<string, unknown>;
+  return {
+    path: (edit.path ?? edit.file) as string,
+    content: (edit.content ?? edit.code) as string,
+  };
+}
+
+/**
+ * Try to fix common JSON issues and parse.
+ */
+function tryParseJSON(text: string): unknown | null {
+  // Try direct parse first
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Continue to repairs
+  }
+
+  // Try fixing trailing commas: ,] or ,}
+  try {
+    const fixed = text.replace(/,(\s*[}\]])/g, "$1");
+    return JSON.parse(fixed);
+  } catch {
+    // Continue
+  }
+
+  // Try fixing missing quotes around keys
+  try {
+    const fixed = text.replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');
+    return JSON.parse(fixed);
+  } catch {
+    // Continue
+  }
+
+  // Try fixing single quotes to double quotes
+  try {
+    const fixed = text.replace(/'/g, '"');
+    return JSON.parse(fixed);
+  } catch {
+    // Continue
+  }
+
+  return null;
+}
+
+/**
+ * Extract array candidates from text using bracket matching.
+ */
+function extractArrayCandidates(text: string): string[] {
+  const candidates: string[] = [];
+  let depth = 0;
+  let startPos = -1;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (char === "[") {
+      if (depth === 0) {
+        startPos = i;
+      }
+      depth++;
+    } else if (char === "]") {
+      depth--;
+      if (depth === 0 && startPos !== -1) {
+        candidates.push(text.slice(startPos, i + 1));
+        startPos = -1;
+      }
+    }
+  }
+
+  return candidates;
+}
+
+/**
+ * Parse file edits from Claude Code output with forgiving parsing.
+ * Returns null if no valid edits found (not an error - AI may have nothing to edit).
+ */
+function parseFileEditsFromOutput(output: string): FileEdit[] | null {
+  // Strategy 1: Extract JSON from markdown code blocks first
+  const codeBlockMatch = output.match(/```(?:json)?\s*([\s\S]*?)```/g);
+  if (codeBlockMatch) {
+    for (const block of codeBlockMatch.reverse()) {
+      const content = block.replace(/```(?:json)?\s*/, "").replace(/```$/, "").trim();
+      const candidates = extractArrayCandidates(content);
+      for (const candidate of candidates.reverse()) {
+        const parsed = tryParseJSON(candidate);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed.every(isValidFileEdit)) {
+          return parsed.map(normalizeFileEdit);
+        }
+      }
+    }
+  }
+
+  // Strategy 2: Look for arrays anywhere in the output
+  const candidates = extractArrayCandidates(output);
+  for (const candidate of candidates.reverse()) {
+    const parsed = tryParseJSON(candidate);
+    if (Array.isArray(parsed) && parsed.length > 0 && parsed.every(isValidFileEdit)) {
+      return parsed.map(normalizeFileEdit);
+    }
+  }
+
+  // Strategy 3: Check for empty array (explicit "no changes")
+  if (output.includes("[]")) {
+    return [];
+  }
+
+  // Strategy 4: Look for phrases indicating no changes needed
+  const noChangePhrases = [
+    "no changes",
+    "no edits",
+    "nothing to change",
+    "no modifications",
+    "already complete",
+    "no updates needed",
+  ];
+  const lowerOutput = output.toLowerCase();
+  for (const phrase of noChangePhrases) {
+    if (lowerOutput.includes(phrase)) {
+      return [];
+    }
+  }
+
+  // No valid edits found
+  return null;
 }
 
 /**
@@ -258,44 +389,12 @@ export class ClaudeCodeAI implements AIModel {
       throw new Error(`Claude Code failed: ${result.output}`);
     }
 
-    // Parse JSON from output by finding '[' positions and using bracket matching
-    // Find all top-level array candidates by tracking bracket depth
-    const candidates: string[] = [];
-    let depth = 0;
-    let startPos = -1;
-
-    for (let i = 0; i < result.output.length; i++) {
-      const char = result.output[i];
-      if (char === "[") {
-        if (depth === 0) {
-          startPos = i;
-        }
-        depth++;
-      } else if (char === "]") {
-        depth--;
-        if (depth === 0 && startPos !== -1) {
-          candidates.push(result.output.slice(startPos, i + 1));
-          startPos = -1;
-        }
-      }
+    // Parse JSON from output using forgiving parsing
+    const edits = parseFileEditsFromOutput(result.output);
+    if (edits === null) {
+      // No edits found - return empty array (not an error)
+      return [];
     }
-
-    if (candidates.length === 0) {
-      throw new Error("Could not parse file edits from Claude Code output");
-    }
-
-    // Try parsing from the last candidate first since output is usually at the end
-    for (let i = candidates.length - 1; i >= 0; i--) {
-      try {
-        const parsed = JSON.parse(candidates[i]);
-        if (Array.isArray(parsed) && parsed.every(isValidFileEdit)) {
-          return parsed;
-        }
-      } catch {
-        // Not valid JSON, try next candidate
-      }
-    }
-
-    throw new Error("Could not find valid file edits JSON in Claude Code output");
+    return edits;
   }
 }

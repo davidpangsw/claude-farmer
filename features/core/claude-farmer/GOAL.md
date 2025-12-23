@@ -57,6 +57,7 @@ Default: Loop forever for iterative improvement until user stops it.
 
 - Implementation in `claude/`
 - Currently: Claude Code headless mode
+  - `ultrathink` is disabled by default, but could be enabled if user indicates.
 - Future: Other AI backends
 
 ## Output Guidelines
