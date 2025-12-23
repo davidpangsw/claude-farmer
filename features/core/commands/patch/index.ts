@@ -6,7 +6,7 @@
  * 2. Perform Develop
  * 3. Commit with meaningful message
  *
- * Loop forever by default. Uses exponential backoff (1→2→4→8 min... max 24h) when no changes.
+ * Loop forever by default. Uses exponential backoff (1→2→4→8 min... max 2h) when no changes.
  */
 
 import { execSync } from "child_process";
@@ -18,7 +18,7 @@ import type { AIModel } from "../../types.js";
 
 /** Minimum sleep duration: 1 minute */
 const MIN_SLEEP_MS = 60 * 1000;
-/** Maximum sleep duration: 24 hours */
+/** Maximum sleep duration: 2 hours */
 const MAX_SLEEP_MS = 2 * 60 * 60 * 1000;
 
 export interface PatchOptions {
@@ -61,10 +61,13 @@ export async function patch(
     try {
       // Run review first, then develop based on review feedback
       const reviewResult = await review(workingDirPath, ai);
-      await logger.logReview(reviewResult.reviewPath, reviewResult.content.length);
+      logger.log(`Review completed: ${reviewResult.reviewPath} (${reviewResult.content.length} chars)`);
 
       const developResult = await develop(workingDirPath, ai);
-      await logger.logDevelop(developResult.edits);
+      logger.log(`Develop completed: ${developResult.edits.length} file(s) edited`);
+      for (const edit of developResult.edits) {
+        logger.log(`  - ${edit.path} (${edit.content.length} chars)`);
+      }
 
       // Commit changes or handle no-edits case
       if (developResult.edits.length > 0) {
@@ -83,36 +86,42 @@ export async function patch(
           encoding: "utf-8",
           stdio: ["pipe", "pipe", "pipe"],
         });
-        await logger.logCommit(commitMessage);
+        logger.log(`Committed: ${commitMessage}`);
 
         // Reset backoff on successful edits
         sleepMs = MIN_SLEEP_MS;
       } else {
-        await logger.logNoChanges();
+        logger.log("No changes to commit");
 
         // Exponential backoff: sleep and retry
-        await logger.logSleep(sleepMs);
-        await logger.finalize();
+        const display = sleepMs >= 60000
+          ? `${Math.round(sleepMs / 60000)} minute(s)`
+          : `${Math.round(sleepMs / 1000)} second(s)`;
+        logger.log(`Sleeping for ${display} before retry...`);
+        logger.finalize();
         await sleep(sleepMs);
         sleepMs = Math.min(sleepMs * 2, MAX_SLEEP_MS);
         continue;
       }
 
-      await logger.finalize();
+      logger.finalize();
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      await logger.logError(err.message);
-      await logger.finalize();
+      logger.error(err.message);
       if (err.message.indexOf("Spending cap reached") !== -1 || err.message.indexOf("You've hit your limit") !== -1) {
-        await logger.log(`INFO: Spending cap reached.`);
+        logger.log("Spending cap reached");
 
         // Exponential backoff: sleep and retry
-        await logger.logSleep(sleepMs);
-        await logger.finalize();
+        const display = sleepMs >= 60000
+          ? `${Math.round(sleepMs / 60000)} minute(s)`
+          : `${Math.round(sleepMs / 1000)} second(s)`;
+        logger.log(`Sleeping for ${display} before retry...`);
+        logger.finalize();
         await sleep(sleepMs);
         sleepMs = Math.min(sleepMs * 2, MAX_SLEEP_MS);
         continue;
       } else {
+        logger.finalize();
         throw error;
       }
     }
