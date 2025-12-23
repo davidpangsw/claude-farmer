@@ -103,7 +103,14 @@ export async function patch(
       const err = error instanceof Error ? error : new Error(String(error));
       await logger.logError(err.message);
       await logger.finalize();
-      throw error;
+      if (err.message.indexOf("Spending cap reached") !== -1) {
+        const sleepInMins = 5;
+        await logger.log(`INFO: Spending cap reached, sleep for ${sleepInMins} minutes`);
+        await logger.finalize();
+        sleep(sleepInMins * 60 * 1000);
+      } else { 
+        throw error;
+      }
     }
   } while (!options.once);
 

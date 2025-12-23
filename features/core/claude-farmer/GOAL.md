@@ -76,6 +76,7 @@ All AI output must be:
   - Only keep last 100 iterations' log
 - Be careful. Do not buffer and delay the logging. We don't want the log only appears after the whole process is done.
 - Any logging **MUST BE** delivered to log file **IN REAL TIME**. That user can know the progress.
+- Do not use your own logger, use a damn library
 
 ## helpers and utilties
 - Place your helpers and utilities under utils/
