@@ -9,7 +9,7 @@ import type { FileEdit } from "../types.js";
 
 // Mock child_process.execSync
 vi.mock("child_process", () => ({
-  execSync: vi.fn(),
+  execSync: vi.fn(() => ""),
 }));
 
 import { execSync } from "child_process";
@@ -19,6 +19,7 @@ const mockedExecSync = vi.mocked(execSync);
 describe("patch", () => {
   beforeEach(() => {
     mockedExecSync.mockClear();
+    mockedExecSync.mockReturnValue("");
   });
 
   afterEach(() => {
@@ -42,6 +43,49 @@ describe("patch", () => {
     expect(result.workingDirName).toBe("project");
     // Should call git scripts twice (checkout + complete)
     expect(mockedExecSync).toHaveBeenCalledTimes(2);
+  });
+
+  it("passes commit message to git-patch-complete.sh", async () => {
+    const fs = new MockFileSystem({
+      "/project/claude-farmer/GOAL.md": "# Goal",
+      "/project/src/index.ts": "export const x = 1;",
+    });
+
+    const edits: FileEdit[] = [
+      { path: "/project/src/index.ts", content: "export const x = 2;" },
+      { path: "/project/src/utils.ts", content: "export function helper() {}" },
+    ];
+    const ai = new MockAIModel("# Review", edits);
+
+    await patch("/project", fs, ai, { once: true });
+
+    // Check that the second call (git-patch-complete.sh) includes a commit message
+    expect(mockedExecSync).toHaveBeenCalledTimes(2);
+    const completeCall = mockedExecSync.mock.calls[1][0] as string;
+    expect(completeCall).toContain("git-patch-complete.sh");
+    expect(completeCall).toContain("claude-farmer: updated");
+    expect(completeCall).toContain("index.ts");
+    expect(completeCall).toContain("utils.ts");
+  });
+
+  it("truncates commit message when many files edited", async () => {
+    const fs = new MockFileSystem({
+      "/project/claude-farmer/GOAL.md": "# Goal",
+    });
+
+    const edits: FileEdit[] = [
+      { path: "/project/a.ts", content: "a" },
+      { path: "/project/b.ts", content: "b" },
+      { path: "/project/c.ts", content: "c" },
+      { path: "/project/d.ts", content: "d" },
+      { path: "/project/e.ts", content: "e" },
+    ];
+    const ai = new MockAIModel("# Review", edits);
+
+    await patch("/project", fs, ai, { once: true });
+
+    const completeCall = mockedExecSync.mock.calls[1][0] as string;
+    expect(completeCall).toContain("and 2 more");
   });
 
   it("stops after one iteration with --once flag when no edits", async () => {
@@ -210,6 +254,76 @@ describe("patch", () => {
     expect(logContent).toContain("ERROR: AI failed");
   });
 
+  it("retries on transient errors", async () => {
+    const fs = new MockFileSystem({
+      "/project/claude-farmer/GOAL.md": "# Goal",
+    });
+
+    let callCount = 0;
+    const ai = new MockAIModel("# Review", []);
+    vi.spyOn(ai, "generateReview").mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        throw new Error("network timeout");
+      }
+      return "# Review";
+    });
+
+    const sleepCalls: number[] = [];
+    const mockSleep = async (ms: number) => {
+      sleepCalls.push(ms);
+    };
+
+    // Should retry and succeed
+    const result = await patch("/project", fs, ai, { once: true, _sleepFn: mockSleep });
+
+    expect(callCount).toBe(2); // First failed, second succeeded
+    expect(result.iterations).toBe(2);
+    expect(sleepCalls.length).toBe(1); // Slept once for retry
+  });
+
+  it("throws after max retries on transient errors", async () => {
+    const fs = new MockFileSystem({
+      "/project/claude-farmer/GOAL.md": "# Goal",
+    });
+
+    const ai = new MockAIModel("# Review", []);
+    vi.spyOn(ai, "generateReview").mockRejectedValue(new Error("network timeout"));
+
+    const sleepCalls: number[] = [];
+    const mockSleep = async (ms: number) => {
+      sleepCalls.push(ms);
+    };
+
+    await expect(patch("/project", fs, ai, { _sleepFn: mockSleep })).rejects.toThrow(
+      "network timeout"
+    );
+
+    // Should have retried MAX_ERROR_RETRIES times (3)
+    expect(sleepCalls.length).toBe(3);
+  });
+
+  it("throws immediately on non-transient errors", async () => {
+    const fs = new MockFileSystem({
+      "/project/claude-farmer/GOAL.md": "# Goal",
+    });
+
+    const ai = new MockAIModel("# Review", []);
+    vi.spyOn(ai, "generateReview").mockRejectedValue(new Error("Invalid API key"));
+
+    const sleepCalls: number[] = [];
+    const mockSleep = async (ms: number) => {
+      sleepCalls.push(ms);
+    };
+
+    await expect(patch("/project", fs, ai, { _sleepFn: mockSleep })).rejects.toThrow(
+      "Invalid API key"
+    );
+
+    // Should NOT have retried
+    expect(sleepCalls.length).toBe(0);
+  });
+
   it("loops multiple times when edits are made each iteration", async () => {
     const fs = new MockFileSystem({
       "/project/claude-farmer/GOAL.md": "# Goal",
@@ -277,5 +391,32 @@ describe("patch", () => {
     expect(iterations).toBeGreaterThanOrEqual(2);
     // git-patch-complete should have been called for iterations with edits
     expect(mockedExecSync).toHaveBeenCalled();
+  });
+
+  it("captures git script output to logs", async () => {
+    const fs = new MockFileSystem({
+      "/project/claude-farmer/GOAL.md": "# Goal",
+      "/project/src/index.ts": "export const x = 1;",
+    });
+
+    // Make execSync return some output
+    mockedExecSync.mockReturnValue("Already up to date.\n");
+
+    const edits: FileEdit[] = [
+      { path: "/project/src/index.ts", content: "export const x = 2;" },
+    ];
+    const ai = new MockAIModel("# Review", edits);
+
+    await patch("/project", fs, ai, { once: true });
+
+    // Check that the log contains the script output
+    const allFiles = fs.getAllFiles();
+    const logFiles = Array.from(allFiles.entries()).filter(([p]) =>
+      p.includes("claude-farmer/logs/")
+    );
+    expect(logFiles.length).toBe(1);
+
+    const logContent = logFiles[0][1];
+    expect(logContent).toContain("Script output: Already up to date.");
   });
 });

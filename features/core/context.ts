@@ -10,11 +10,29 @@ import type {
 import { join, basename, sep } from "path";
 
 /**
+ * Default file patterns to gather as source files.
+ * Includes common source file extensions.
+ */
+const DEFAULT_SOURCE_PATTERNS = [
+  "**/*.ts",
+  "**/*.tsx",
+  "**/*.js",
+  "**/*.jsx",
+  "**/*.json",
+  "**/*.md",
+];
+
+/**
  * Gathers the context needed for reviewing or developing a working directory.
+ *
+ * @param workingDirPath - The path to the working directory
+ * @param fs - File system interface
+ * @param patterns - Optional array of glob patterns for source files (default: common extensions)
  */
 export async function gatherWorkingDirContext(
   workingDirPath: string,
-  fs: FileSystem
+  fs: FileSystem,
+  patterns: string[] = DEFAULT_SOURCE_PATTERNS
 ): Promise<WorkingDirContext> {
   const workingDirName = basename(workingDirPath);
 
@@ -31,13 +49,24 @@ export async function gatherWorkingDirContext(
     review = { path: reviewPath, content: reviewContent };
   }
 
-  // Gather source files (*.ts files in working directory, excluding claude-farmer/)
+  // Gather source files using provided patterns, excluding claude-farmer/
   const sourceFiles: FileContent[] = [];
-  const tsFiles = await fs.listFiles(workingDirPath, "**/*.ts");
   const claudeFarmerPath = join(workingDirPath, "claude-farmer");
-  for (const filePath of tsFiles) {
-    // Skip files in or under the claude-farmer directory
-    if (!filePath.startsWith(claudeFarmerPath + sep) && filePath !== claudeFarmerPath) {
+  const seenPaths = new Set<string>();
+
+  for (const pattern of patterns) {
+    const files = await fs.listFiles(workingDirPath, pattern);
+    for (const filePath of files) {
+      // Skip files in or under the claude-farmer directory
+      if (filePath.startsWith(claudeFarmerPath + sep) || filePath === claudeFarmerPath) {
+        continue;
+      }
+      // Skip if already processed (patterns may overlap)
+      if (seenPaths.has(filePath)) {
+        continue;
+      }
+      seenPaths.add(filePath);
+
       const content = await fs.readFile(filePath);
       sourceFiles.push({ path: filePath, content });
     }

@@ -1,11 +1,11 @@
-I need permission to write the review file. Here's the review:
+I need write permission to save the review. Here's the updated review:
 
 ---
 
 # Review
 
 ## Summary
-Git scripts exist; critical gaps are real-time logging (currently buffered) and missing exponential backoff.
+Core functionality complete; remaining issues are commit message passthrough and hardcoded file patterns.
 
 ## Goal Alignment
 - [x] Review task: reads GOAL, source → produces REVIEW.md
@@ -13,35 +13,39 @@ Git scripts exist; critical gaps are real-time logging (currently buffered) and 
 - [x] Patch command: orchestrates review → develop → commit loop
 - [x] Tasks not exposed: only commands exported in index.ts
 - [x] Logging with rotation (100 files max)
-- [x] Git scripts exist
-- [ ] **Real-time logging**: GOAL says "MUST BE delivered IN REAL TIME", but `logging/index.ts` buffers in memory and writes only at `finalize()`
-- [ ] **Exponential backoff**: GOAL specifies 1→2→4→8 min up to 24h, not implemented
-- [ ] File patterns: hardcoded `**/*.ts` excludes `.tsx`, `.js`, `.json`, `.md`
+- [x] Real-time logging: each `log()` call writes immediately via `appendFile`
+- [x] Exponential backoff: 1→2→4→8 min... up to 24h, resets on edits
+- [ ] **Commit message not passed to git script**: `executeScript()` doesn't pass the message arg
+- [ ] **File patterns hardcoded**: `**/*.ts` excludes `.tsx`, `.js`, `.json`, `.md`
 
 ## Suggestions
 
 ### High Priority
-1. **Implement real-time logging** (`logging/index.ts:46-60`)
-   - Current: all logs buffered in `this.lines[]`, written at `finalize()`
-   - Required: write each log line immediately to file
-   - Solution: open file stream on construction, append on each `log()` call
+1. **Pass commit message to git-patch-complete.sh** (`commands/patch/index.ts:90`)
+   - Current: `executeScript(join(scriptsDir, "git-patch-complete.sh"), workingDirPath)`
+   - Required: pass meaningful message like "Review: 3 suggestions, Develop: 2 files edited"
+   - Fix: modify `executeScript()` to accept args, or use template in script call
 
-2. **Implement exponential backoff** (`commands/patch/index.ts:75-77`)
-   - Current: loop exits when `developResult.edits.length === 0`
-   - Required: sleep 1→2→4→8 min... up to 24h, then retry
-   - Add: `sleepMs` variable, double on no-edits, cap at 86400000ms
+2. **Make source file patterns configurable** (`context.ts:36`)
+   - Current: hardcoded `**/*.ts`
+   - Required: support `.tsx`, `.js`, `.json`, `.md` and other project files
+   - Options: read from config, use multiple patterns, or default to common patterns
 
 ### Medium Priority
-1. **Make source file patterns configurable** (`context.ts:36`)
-2. **git-patch-checkout.sh is a no-op** - just prints "ready"
-3. **Commit message not passed to git script** (`commands/patch/index.ts:72-73`)
-4. **Capture git script output to logs** instead of `stdio: "inherit"`
+1. **Capture git script output to logs** (`commands/patch/index.ts:52-56`)
+   - Current: `stdio: "inherit"` sends to terminal, not logged
+   - Fix: capture stdout/stderr and log via `logger.log()`
+
+2. **Add error recovery in patch loop** (`commands/patch/index.ts:75-108`)
+   - Current: any error throws and stops the loop
+   - Consider: log error, backoff, retry for transient failures
 
 ### Low Priority
-1. Add integration test with real git repo
-2. Add default timeout for AI calls
+1. **git-patch-checkout.sh is a placeholder** - document intended use or remove
+2. **Add integration test with real git repo** - current tests only use mocks
+3. **Consider timeout for AI calls** - `ClaudeCodeAI` accepts timeout but it's optional with no default
 
 ## Next Steps
-1. Refactor `logging/index.ts` to write in real-time
-2. Add exponential backoff sleep in patch loop
-3. Pass meaningful commit message to git-patch-complete.sh
+1. Add commit message argument to `executeScript()` call
+2. Expand file patterns to include common source extensions
+3. Capture and log git script output

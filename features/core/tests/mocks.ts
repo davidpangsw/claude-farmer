@@ -49,26 +49,42 @@ export class MockFileSystem implements FileSystem {
       if (path.startsWith(normalizedDir) || path.startsWith(directory + "/")) {
         if (!pattern) {
           results.push(path);
-        } else if (pattern === "**/*.ts") {
-          if (path.endsWith(".ts")) {
-            results.push(path);
-          }
-        } else if (pattern === "*.log") {
-          if (path.endsWith(".log")) {
-            results.push(path);
-          }
         } else {
-          // Generic extension matching for patterns like "*.ext"
-          const extMatch = pattern.match(/^\*\.(\w+)$/);
-          if (extMatch && path.endsWith(`.${extMatch[1]}`)) {
-            results.push(path);
-          } else {
+          // Handle glob patterns
+          const matched = this.matchPattern(path, pattern);
+          if (matched) {
             results.push(path);
           }
         }
       }
     }
     return results;
+  }
+
+  /**
+   * Simple glob pattern matching for common patterns.
+   */
+  private matchPattern(filePath: string, pattern: string): boolean {
+    // Handle **/*.ext patterns
+    const globMatch = pattern.match(/^\*\*\/\*\.([\w]+)$/);
+    if (globMatch) {
+      return filePath.endsWith(`.${globMatch[1]}`);
+    }
+
+    // Handle *.ext patterns
+    const extMatch = pattern.match(/^\*\.([\w]+)$/);
+    if (extMatch) {
+      return filePath.endsWith(`.${extMatch[1]}`);
+    }
+
+    // Handle **/filename patterns
+    const nameMatch = pattern.match(/^\*\*\/(.+)$/);
+    if (nameMatch) {
+      return filePath.endsWith(`/${nameMatch[1]}`) || filePath === nameMatch[1];
+    }
+
+    // Default: include if no specific pattern handling
+    return true;
   }
 
   async mkdir(path: string): Promise<void> {

@@ -56,4 +56,54 @@ describe("gatherWorkingDirContext", () => {
       "File not found"
     );
   });
+
+  it("gathers files with multiple extensions using default patterns", async () => {
+    const fs = new MockFileSystem({
+      "/project/claude-farmer/GOAL.md": "# Goal",
+      "/project/src/index.ts": "export const x = 1;",
+      "/project/src/Component.tsx": "export function Component() {}",
+      "/project/src/utils.js": "module.exports = {};",
+      "/project/src/helper.jsx": "export function Helper() {}",
+      "/project/package.json": '{"name": "test"}',
+      "/project/README.md": "# README",
+    });
+
+    const context = await gatherWorkingDirContext("/project", fs);
+
+    // Should include all file types from default patterns
+    const extensions = context.sourceFiles.map(f => f.path.split(".").pop());
+    expect(extensions).toContain("ts");
+    expect(extensions).toContain("tsx");
+    expect(extensions).toContain("js");
+    expect(extensions).toContain("jsx");
+    expect(extensions).toContain("json");
+    expect(extensions).toContain("md");
+  });
+
+  it("supports custom file patterns", async () => {
+    const fs = new MockFileSystem({
+      "/project/claude-farmer/GOAL.md": "# Goal",
+      "/project/src/index.ts": "export const x = 1;",
+      "/project/src/style.css": "body {}",
+      "/project/src/config.yaml": "key: value",
+    });
+
+    // Only gather CSS files
+    const context = await gatherWorkingDirContext("/project", fs, ["**/*.css"]);
+
+    expect(context.sourceFiles).toHaveLength(1);
+    expect(context.sourceFiles[0].path).toContain(".css");
+  });
+
+  it("deduplicates files when patterns overlap", async () => {
+    const fs = new MockFileSystem({
+      "/project/claude-farmer/GOAL.md": "# Goal",
+      "/project/src/index.ts": "export const x = 1;",
+    });
+
+    // Both patterns would match the same file
+    const context = await gatherWorkingDirContext("/project", fs, ["**/*.ts", "**/index.ts"]);
+
+    expect(context.sourceFiles).toHaveLength(1);
+  });
 });
