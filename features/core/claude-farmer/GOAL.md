@@ -65,3 +65,7 @@ All AI output must be:
 - Concise and precise
 - No redundant information
 - Actionable
+
+## Logging
+- Each iteration should be logged in `claude-farmer/logs/YYYYMMDD_HHmmss.log`
+  - Only keep last 100 iterations' log

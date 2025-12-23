@@ -30,6 +30,7 @@ import type { FileSystem } from "../features/core/index.js";
 // Import tasks directly (internal to core feature)
 import { review } from "../features/core/tasks/review/index.js";
 import { develop } from "../features/core/tasks/develop/index.js";
+import { createIterationLogger } from "../features/core/logging/index.js";
 
 // Node.js file system implementation
 class NodeFileSystem implements FileSystem {
@@ -69,6 +70,10 @@ class NodeFileSystem implements FileSystem {
   async mkdir(path: string): Promise<void> {
     await fsPromises.mkdir(path, { recursive: true });
   }
+
+  async deleteFile(path: string): Promise<void> {
+    await fsPromises.unlink(path);
+  }
 }
 
 function printHelp(): void {
@@ -103,57 +108,77 @@ async function runPatch(
 
   do {
     iterations++;
+    const logger = createIterationLogger(workingDir, fs, iterations);
+
     if (loop) {
       console.log(`\n=== Iteration ${iterations} ===`);
     }
 
-    // Step 1: Review
-    console.log("\n[1/3] Running review...");
-    const reviewResult = await review(workingDir, fs, ai);
-    console.log(`Review written to: ${reviewResult.reviewPath}`);
-
-    // Step 2: Develop
-    console.log("\n[2/3] Running develop...");
-    const developResult = await develop(workingDir, fs, ai);
-    console.log(`Applied ${developResult.edits.length} file edits`);
-    for (const edit of developResult.edits) {
-      console.log(`  - ${edit.path}`);
-    }
-
-    // Step 3: Commit
-    console.log("\n[3/3] Committing changes...");
     try {
-      // Stage all changes
-      execSync("git add -A", { cwd: projectRoot, encoding: "utf-8" });
+      // Step 1: Review
+      console.log("\n[1/3] Running review...");
+      logger.log("Starting review task");
+      const reviewResult = await review(workingDir, fs, ai);
+      console.log(`Review written to: ${reviewResult.reviewPath}`);
+      logger.logReview(reviewResult.reviewPath, reviewResult.content.length);
 
-      // Check if there are changes to commit
-      const status = execSync("git status --porcelain", {
-        cwd: projectRoot,
-        encoding: "utf-8",
-      });
+      // Step 2: Develop
+      console.log("\n[2/3] Running develop...");
+      logger.log("Starting develop task");
+      const developResult = await develop(workingDir, fs, ai);
+      console.log(`Applied ${developResult.edits.length} file edits`);
+      for (const edit of developResult.edits) {
+        console.log(`  - ${edit.path}`);
+      }
+      logger.logDevelop(developResult.edits);
 
-      if (status.trim()) {
-        // Commit with meaningful message
-        const message = `claude-farmer: iteration ${iterations}`;
-        execSync(`git commit -m "${message}"`, {
+      // Step 3: Commit
+      console.log("\n[3/3] Committing changes...");
+      logger.log("Starting commit");
+      try {
+        // Stage all changes
+        execSync("git add -A", { cwd: projectRoot, encoding: "utf-8" });
+
+        // Check if there are changes to commit
+        const status = execSync("git status --porcelain", {
           cwd: projectRoot,
           encoding: "utf-8",
         });
-        console.log(`Committed: ${message}`);
-      } else {
-        console.log("No changes to commit.");
+
+        if (status.trim()) {
+          // Commit with meaningful message
+          const message = `claude-farmer: iteration ${iterations}`;
+          execSync(`git commit -m "${message}"`, {
+            cwd: projectRoot,
+            encoding: "utf-8",
+          });
+          console.log(`Committed: ${message}`);
+          logger.logCommit(message);
+        } else {
+          console.log("No changes to commit.");
+          logger.logNoChanges();
+        }
+      } catch (error) {
+        if (error instanceof Error && "stderr" in error) {
+          console.error((error as { stderr: string }).stderr);
+        }
+        logger.logError("Failed to commit changes");
+        throw new Error("Failed to commit changes");
+      }
+
+      // Finalize log for this iteration
+      const logPath = await logger.finalize();
+      console.log(`Log written to: ${logPath}`);
+
+      // Check if we should continue looping
+      if (developResult.edits.length === 0) {
+        console.log("\nNo more changes needed.");
+        break;
       }
     } catch (error) {
-      if (error instanceof Error && "stderr" in error) {
-        console.error((error as { stderr: string }).stderr);
-      }
-      throw new Error("Failed to commit changes");
-    }
-
-    // Check if we should continue looping
-    if (developResult.edits.length === 0) {
-      console.log("\nNo more changes needed.");
-      break;
+      logger.logError(error instanceof Error ? error.message : String(error));
+      await logger.finalize();
+      throw error;
     }
   } while (loop);
 }

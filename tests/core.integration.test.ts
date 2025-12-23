@@ -66,6 +66,13 @@ class TestFileSystem implements FileSystem {
     this.directories.add(path);
   }
 
+  async deleteFile(path: string): Promise<void> {
+    if (!this.files.has(path)) {
+      throw new Error(`File not found: ${path}`);
+    }
+    this.files.delete(path);
+  }
+
   getFile(path: string): string | undefined {
     return this.files.get(path);
   }

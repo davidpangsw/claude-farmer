@@ -56,6 +56,7 @@ export interface FileSystem {
   exists(path: string): Promise<boolean>;
   listFiles(directory: string, pattern?: string): Promise<string[]>;
   mkdir(path: string): Promise<void>;
+  deleteFile(path: string): Promise<void>;
 }
 
 /**
