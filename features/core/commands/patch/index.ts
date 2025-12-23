@@ -27,6 +27,8 @@ const MAX_ERROR_RETRIES = 3;
 export interface PatchOptions {
   once?: boolean;
   scriptsDir?: string;
+  /** Enable ultrathink mode for AI (default: false) */
+  ultrathink?: boolean;
   /** @internal For testing - custom sleep function */
   _sleepFn?: (ms: number) => Promise<void>;
 }
@@ -35,6 +37,9 @@ export interface PatchResult {
   workingDirName: string;
   iterations: number;
 }
+
+/** Flag to signal graceful shutdown */
+let shouldStop = false;
 
 /**
  * Default sleep function using setTimeout.
@@ -52,12 +57,12 @@ function defaultSleep(ms: number): Promise<void> {
  * @param logger - Optional logger to capture output
  * @returns The script's stdout output
  */
-function executeScript(
+async function executeScript(
   scriptPath: string,
   cwd: string,
   args: string[] = [],
   logger?: IterationLogger
-): string {
+): Promise<string> {
   const argsStr = args.length > 0 ? " " + args.map(a => `"${a.replace(/"/g, '\\"')}"`).join(" ") : "";
   const command = `bash "${scriptPath}"${argsStr}`;
 
@@ -68,10 +73,9 @@ function executeScript(
       stdio: ["pipe", "pipe", "pipe"],
     });
 
-    // Log script output if logger provided
+    // Log script output if logger provided - await to ensure write completes
     if (logger && output.trim()) {
-      // Use void to handle the promise without blocking
-      void logger.log(`Script output: ${output.trim()}`);
+      await logger.log(`Script output: ${output.trim()}`);
     }
 
     return output;
@@ -80,13 +84,13 @@ function executeScript(
     const stderr = execError.stderr ?? "";
     const stdout = execError.stdout ?? "";
 
-    // Log error output
+    // Log error output - await to ensure writes complete
     if (logger) {
       if (stderr.trim()) {
-        void logger.log(`Script stderr: ${stderr.trim()}`);
+        await logger.log(`Script stderr: ${stderr.trim()}`);
       }
       if (stdout.trim()) {
-        void logger.log(`Script stdout: ${stdout.trim()}`);
+        await logger.log(`Script stdout: ${stdout.trim()}`);
       }
     }
 
@@ -112,12 +116,36 @@ function isTransientError(error: Error): boolean {
 }
 
 /**
+ * Sets up signal handlers for graceful shutdown.
+ * Returns a cleanup function to remove the handlers.
+ */
+function setupSignalHandlers(logger?: IterationLogger): () => void {
+  const handler = async (signal: string) => {
+    shouldStop = true;
+    if (logger) {
+      await logger.log(`Received ${signal}, shutting down gracefully...`);
+    }
+  };
+
+  const sigintHandler = () => { void handler("SIGINT"); };
+  const sigtermHandler = () => { void handler("SIGTERM"); };
+
+  process.on("SIGINT", sigintHandler);
+  process.on("SIGTERM", sigtermHandler);
+
+  return () => {
+    process.off("SIGINT", sigintHandler);
+    process.off("SIGTERM", sigtermHandler);
+  };
+}
+
+/**
  * Executes the patch command for a working directory.
  *
  * @param workingDirPath - The path to the working directory
  * @param fs - File system interface
  * @param ai - AI model interface
- * @param options - Patch options including --once flag and optional scriptsDir
+ * @param options - Patch options including --once flag, ultrathink, and optional scriptsDir
  */
 export async function patch(
   workingDirPath: string,
@@ -130,88 +158,104 @@ export async function patch(
   let consecutiveErrors = 0;
   const sleep = options._sleepFn ?? defaultSleep;
 
+  // Reset stop flag at start
+  shouldStop = false;
+
   // Default scripts directory is relative to this module
   const scriptsDir = options.scriptsDir ?? join(import.meta.dirname, "../../scripts");
 
-  do {
-    iterations++;
-    const logger = createIterationLogger(workingDirPath, fs, iterations);
+  // Setup signal handlers for graceful shutdown
+  const cleanupSignals = setupSignalHandlers();
 
-    try {
-      // Prepare for patch iteration
-      executeScript(join(scriptsDir, "git-patch-checkout.sh"), workingDirPath, [], logger);
-
-      // Run review first, then develop based on review feedback
-      const reviewResult = await review(workingDirPath, fs, ai);
-      await logger.logReview(reviewResult.reviewPath, reviewResult.content.length);
-
-      const developResult = await develop(workingDirPath, fs, ai);
-      await logger.logDevelop(developResult.edits);
-
-      // Reset error counter on successful AI calls
-      consecutiveErrors = 0;
-
-      // Commit changes or handle no-edits case
-      if (developResult.edits.length > 0) {
-        // Build meaningful commit message
-        const fileCount = developResult.edits.length;
-        const fileNames = developResult.edits
-          .map(e => basename(e.path))
-          .slice(0, 3)
-          .join(", ");
-        const suffix = fileCount > 3 ? ` and ${fileCount - 3} more` : "";
-        const commitMessage = `claude-farmer: updated ${fileNames}${suffix}`;
-
-        executeScript(
-          join(scriptsDir, "git-patch-complete.sh"),
-          workingDirPath,
-          [commitMessage],
-          logger
-        );
-        await logger.logCommit(commitMessage);
-
-        // Reset backoff on successful edits
-        sleepMs = MIN_SLEEP_MS;
-      } else {
-        await logger.logNoChanges();
-
-        // If --once flag, exit after this iteration
-        if (options.once) {
-          await logger.finalize();
-          break;
-        }
-
-        // Exponential backoff: sleep and retry
-        await logger.logSleep(sleepMs);
-        await logger.finalize();
-        await sleep(sleepMs);
-        sleepMs = Math.min(sleepMs * 2, MAX_SLEEP_MS);
-        continue;
+  try {
+    do {
+      // Check for graceful shutdown
+      if (shouldStop) {
+        break;
       }
 
-      await logger.finalize();
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      await logger.logError(err.message);
-      await logger.finalize();
+      iterations++;
+      const logger = createIterationLogger(workingDirPath, fs, iterations);
 
-      // Check if error is transient and we should retry
-      if (!options.once && isTransientError(err)) {
-        consecutiveErrors++;
+      try {
+        // Prepare for patch iteration
+        await executeScript(join(scriptsDir, "git-patch-checkout.sh"), workingDirPath, [], logger);
 
-        if (consecutiveErrors < MAX_ERROR_RETRIES) {
-          // Use exponential backoff for retries
-          const retryDelay = sleepMs * consecutiveErrors;
-          await logger.log(`Transient error, retrying in ${retryDelay / 1000}s (attempt ${consecutiveErrors}/${MAX_ERROR_RETRIES})`);
-          await sleep(retryDelay);
+        // Run review first, then develop based on review feedback
+        const reviewResult = await review(workingDirPath, fs, ai);
+        await logger.logReview(reviewResult.reviewPath, reviewResult.content.length);
+
+        const developResult = await develop(workingDirPath, fs, ai);
+        await logger.logDevelop(developResult.edits);
+
+        // Reset error counter on successful AI calls
+        consecutiveErrors = 0;
+
+        // Commit changes or handle no-edits case
+        if (developResult.edits.length > 0) {
+          // Build meaningful commit message
+          const fileCount = developResult.edits.length;
+          const fileNames = developResult.edits
+            .map(e => basename(e.path))
+            .slice(0, 3)
+            .join(", ");
+          const suffix = fileCount > 3 ? ` and ${fileCount - 3} more` : "";
+          const commitMessage = `claude-farmer: updated ${fileNames}${suffix}`;
+
+          await executeScript(
+            join(scriptsDir, "git-patch-complete.sh"),
+            workingDirPath,
+            [commitMessage],
+            logger
+          );
+          await logger.logCommit(commitMessage);
+
+          // Reset backoff on successful edits
+          sleepMs = MIN_SLEEP_MS;
+        } else {
+          await logger.logNoChanges();
+
+          // If --once flag, exit after this iteration
+          if (options.once) {
+            await logger.finalize();
+            break;
+          }
+
+          // Exponential backoff: sleep and retry
+          await logger.logSleep(sleepMs);
+          await logger.finalize();
+          await sleep(sleepMs);
+          sleepMs = Math.min(sleepMs * 2, MAX_SLEEP_MS);
           continue;
         }
-      }
 
-      // Non-transient error or max retries exceeded - rethrow
-      throw error;
-    }
-  } while (!options.once);
+        await logger.finalize();
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        await logger.logError(err.message);
+        await logger.finalize();
+
+        // Check if error is transient and we should retry
+        if (!options.once && isTransientError(err)) {
+          consecutiveErrors++;
+
+          if (consecutiveErrors < MAX_ERROR_RETRIES) {
+            // Use exponential backoff for retries
+            const retryDelay = sleepMs * consecutiveErrors;
+            await logger.log(`Transient error, retrying in ${retryDelay / 1000}s (attempt ${consecutiveErrors}/${MAX_ERROR_RETRIES})`);
+            await sleep(retryDelay);
+            continue;
+          }
+        }
+
+        // Non-transient error or max retries exceeded - rethrow
+        throw error;
+      }
+    } while (!options.once && !shouldStop);
+  } finally {
+    // Cleanup signal handlers
+    cleanupSignals();
+  }
 
   return {
     workingDirName: basename(workingDirPath),

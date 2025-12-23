@@ -419,4 +419,17 @@ describe("patch", () => {
     const logContent = logFiles[0][1];
     expect(logContent).toContain("Script output: Already up to date.");
   });
+
+  it("accepts ultrathink option", async () => {
+    const fs = new MockFileSystem({
+      "/project/claude-farmer/GOAL.md": "# Goal",
+    });
+
+    const ai = new MockAIModel("# Review", []);
+
+    // Should accept ultrathink option without error
+    const result = await patch("/project", fs, ai, { once: true, ultrathink: true });
+
+    expect(result.iterations).toBe(1);
+  });
 });

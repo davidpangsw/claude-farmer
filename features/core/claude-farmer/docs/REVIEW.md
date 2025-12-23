@@ -1,11 +1,10 @@
-I need write permission to save the review. Here's the updated review:
+Now let me write the updated review based on my analysis:
 
----
-
+```markdown
 # Review
 
 ## Summary
-Core functionality complete; remaining issues are commit message passthrough and hardcoded file patterns.
+Core functionality complete; previous high-priority issues resolved. Remaining issues are async logging safety and missing ultrathink user configuration.
 
 ## Goal Alignment
 - [x] Review task: reads GOAL, source → produces REVIEW.md
@@ -13,39 +12,42 @@ Core functionality complete; remaining issues are commit message passthrough and
 - [x] Patch command: orchestrates review → develop → commit loop
 - [x] Tasks not exposed: only commands exported in index.ts
 - [x] Logging with rotation (100 files max)
-- [x] Real-time logging: each `log()` call writes immediately via `appendFile`
+- [x] Real-time logging via appendFile
 - [x] Exponential backoff: 1→2→4→8 min... up to 24h, resets on edits
-- [ ] **Commit message not passed to git script**: `executeScript()` doesn't pass the message arg
-- [ ] **File patterns hardcoded**: `**/*.ts` excludes `.tsx`, `.js`, `.json`, `.md`
+- [x] Commit message passed to git script
+- [x] File patterns configurable with sensible defaults
+- [ ] **ultrathink user control**: GOAL says "enabled if user indicates" but PatchOptions has no ultrathink option
 
 ## Suggestions
 
 ### High Priority
-1. **Pass commit message to git-patch-complete.sh** (`commands/patch/index.ts:90`)
-   - Current: `executeScript(join(scriptsDir, "git-patch-complete.sh"), workingDirPath)`
-   - Required: pass meaningful message like "Review: 3 suggestions, Develop: 2 files edited"
-   - Fix: modify `executeScript()` to accept args, or use template in script call
+1. **Add ultrathink option to PatchOptions** (`commands/patch/index.ts`)
+   - GOAL.md: "ultrathink is disabled by default, but could be enabled if user indicates"
+   - Current: ClaudeCodeAI defaults ultrathink to false, but no way to enable via patch()
+   - Fix: Add `ultrathink?: boolean` to PatchOptions, pass to ClaudeCodeAI constructor
 
-2. **Make source file patterns configurable** (`context.ts:36`)
-   - Current: hardcoded `**/*.ts`
-   - Required: support `.tsx`, `.js`, `.json`, `.md` and other project files
-   - Options: read from config, use multiple patterns, or default to common patterns
+2. **Await logger.log() in executeScript** (`commands/patch/index.ts:70,79,82`)
+   - Current: `void logger.log()` fire-and-forget pattern
+   - Risk: Fast script execution could lose log entries if process moves on before async write
+   - Fix: Return and await the logger calls, or buffer then flush after script completes
 
 ### Medium Priority
-1. **Capture git script output to logs** (`commands/patch/index.ts:52-56`)
-   - Current: `stdio: "inherit"` sends to terminal, not logged
-   - Fix: capture stdout/stderr and log via `logger.log()`
+1. **Add graceful shutdown handling** (`commands/patch/index.ts`)
+   - Current: Infinite loop with no signal handling
+   - Risk: SIGTERM/SIGINT leaves loop in undefined state
+   - Fix: Add signal handlers to set a `shouldStop` flag, log graceful shutdown
 
-2. **Add error recovery in patch loop** (`commands/patch/index.ts:75-108`)
-   - Current: any error throws and stops the loop
-   - Consider: log error, backoff, retry for transient failures
+2. **Expand git-patch-checkout.sh functionality** (`scripts/git-patch-checkout.sh`)
+   - Current: Only checks if git repo exists
+   - Comments suggest: stash changes, fetch remote
+   - Consider: At minimum, warn if there are uncommitted changes
 
 ### Low Priority
-1. **git-patch-checkout.sh is a placeholder** - document intended use or remove
-2. **Add integration test with real git repo** - current tests only use mocks
-3. **Consider timeout for AI calls** - `ClaudeCodeAI` accepts timeout but it's optional with no default
+1. **Add E2E integration test for ClaudeCodeAI** - All tests use mocks; no verification that actual `claude` CLI spawning works correctly
+2. **Consider config file support** - Allow users to specify file patterns in `claude-farmer/config.json` instead of only programmatically
 
 ## Next Steps
-1. Add commit message argument to `executeScript()` call
-2. Expand file patterns to include common source extensions
-3. Capture and log git script output
+1. Add `ultrathink` option to PatchOptions and wire through to ClaudeCodeAI
+2. Fix async logging in executeScript to await log writes
+3. Add SIGINT/SIGTERM handlers for graceful shutdown
+```
