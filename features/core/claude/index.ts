@@ -5,12 +5,92 @@
  * Claude Code in headless mode to generate responses.
  */
 
-import type { AIModel, WorkingDirContext, FileEdit, FileSystem } from "../types.js";
+import type { AIModel, WorkingDirContext, FileEdit } from "../types.js";
 import type { ClaudeCodeOptions, ClaudeCodeResult } from "./types.js";
 import { spawn } from "child_process";
-import { join } from "path";
 
 export type { ClaudeCodeOptions, ClaudeCodeResult } from "./types.js";
+
+// Embedded prompts (no need for external files)
+const REVIEW_PROMPT = `# Review Prompt
+
+Review a working directory and provide improvement suggestions. Research best practices via web search before generating suggestions.
+
+## Context Provided
+
+- **GOAL.md**: Project goals
+- **Source Files**: Current implementation
+
+## Your Task
+
+1. Research best practices via web search relevant to the goals
+2. Analyze implementation against goals:
+   - **Goal Alignment**: Does it meet stated goals?
+   - **Code Quality**: Issues to address?
+   - **Missing Features**: What's incomplete?
+   - **Testing**: Adequate coverage?
+
+## Output Guidelines
+
+- Be concise - actionable items only
+- Prioritize by impact
+- Skip empty sections
+- No generic advice - be specific
+
+## Output Format
+
+\`\`\`markdown
+# Review
+
+## Summary
+One-line assessment.
+
+## Goal Alignment
+- [x] Goal 1
+- [ ] Goal 2: missing X
+
+## Suggestions
+
+### High Priority
+1. ...
+
+### Medium Priority
+1. ...
+
+## Next Steps
+1. ...
+\`\`\``;
+
+const DEVELOP_PROMPT = `# Develop Prompt
+
+Develop a feature by writing or editing code.
+
+## Context Provided
+
+- **GOAL.md**: Feature goals
+- **REVIEW.md**: Review suggestions (if available)
+- **Source Files**: Current implementation (if any)
+
+## Your Task
+
+1. Implement what GOAL.md specifies
+2. Fix issues from REVIEW.md (if present)
+3. Write tests for new functionality
+4. Match existing code patterns
+
+## Guidelines
+
+- Minimal, focused changes
+- Clean, readable code
+- Error handling where needed
+- JSDoc for public APIs only
+
+## Output
+
+Return JSON array of file edits:
+\`\`\`json
+[{"path": "...", "content": "..."}]
+\`\`\``;
 
 /**
  * Runs Claude Code in headless mode with the given options.
@@ -92,35 +172,22 @@ export class ClaudeCodeAI implements AIModel {
   private ultrathink: boolean;
   private model?: string;
   private timeout?: number;
-  private tasksDir: string;
-  private fs: FileSystem;
 
   constructor(options: {
     cwd?: string;
     ultrathink?: boolean;
     model?: string;
     timeout?: number;
-    tasksDir: string;
-    fs: FileSystem;
   }) {
     this.cwd = options.cwd;
     this.ultrathink = options.ultrathink ?? true;
     this.model = options.model;
     this.timeout = options.timeout;
-    this.tasksDir = options.tasksDir;
-    this.fs = options.fs;
-  }
-
-  private async readPromptFile(taskName: string): Promise<string> {
-    const promptPath = join(this.tasksDir, taskName, "PROMPT.md");
-    return this.fs.readFile(promptPath);
   }
 
   async generateReview(context: WorkingDirContext): Promise<string> {
-    const promptTemplate = await this.readPromptFile("review");
     const contextStr = formatContext(context);
-
-    const prompt = `${promptTemplate}\n\n---\n\n${contextStr}`;
+    const prompt = `${REVIEW_PROMPT}\n\n---\n\n${contextStr}`;
 
     const result = await runClaudeCode({
       prompt,
@@ -138,10 +205,8 @@ export class ClaudeCodeAI implements AIModel {
   }
 
   async generateEdits(context: WorkingDirContext): Promise<FileEdit[]> {
-    const promptTemplate = await this.readPromptFile("develop");
     const contextStr = formatContext(context);
-
-    const prompt = `${promptTemplate}\n\n---\n\n${contextStr}\n\n---\n\nRespond with JSON array of file edits: [{"path": "...", "content": "..."}]`;
+    const prompt = `${DEVELOP_PROMPT}\n\n---\n\n${contextStr}\n\n---\n\nRespond with JSON array of file edits: [{"path": "...", "content": "..."}]`;
 
     const result = await runClaudeCode({
       prompt,

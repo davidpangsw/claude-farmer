@@ -192,13 +192,10 @@ async function main(): Promise<void> {
   const projectRoot = process.cwd();
 
   const fs = new NodeFileSystem();
-  const tasksDir = join(projectRoot, "features", "core", "tasks");
 
   const ai = new ClaudeCodeAI({
     cwd: workingDir,
     ultrathink: true,
-    tasksDir,
-    fs,
   });
 
   console.log(`Claude Farmer - Patch command`);
