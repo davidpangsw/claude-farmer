@@ -1,6 +1,8 @@
 # Core Feature
 
-Tools to generate and improve code within any working directory.
+This is a feature folder (or module) of a project, claude-farmer.
+
+Provide methods or classes to generate and improve code within any working directory.
 
 ## Notation
 
@@ -39,12 +41,10 @@ Tasks are not exposed outside of the feature. Do not expose any tasks nor its ar
 
 Tasks are building blocks orchestrated into commands. Only implement and expose the command and flags specified in these section. Don't implement or expose any additional commands or flags.
 
-### Patch Command
-
-Usage: `claude-farmer patch [working_directory] [options]`
-
+### patch() method
 Options:
-- `--once` - Run once instead of looping
+- `once` - Run once instead of looping
+- `ultrathink` - ultrathink mode, default to be false
 
 Workflow:
 1. Perform **Review**
@@ -76,3 +76,6 @@ All AI output must be:
   - Only keep last 100 iterations' log
 - Be careful. Do not buffer and delay the logging. We don't want the log only appears after the whole process is done.
 - Any logging **MUST BE** delivered to log file **IN REAL TIME**. That user can know the progress.
+
+## helpers and utilties
+- Place your helpers and utilities under utils/
