@@ -11,11 +11,15 @@
  */
 
 import { execSync } from "child_process";
-import { join, basename } from "path";
+import { join, basename, dirname } from "path";
+import { fileURLToPath } from "url";
 import { review } from "../../tasks/review/index.js";
 import { develop } from "../../tasks/develop/index.js";
 import { createIterationLogger, IterationLogger } from "../../logging/index.js";
 import type { FileSystem, AIModel } from "../../types.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 /** Minimum sleep duration: 1 minute */
 const MIN_SLEEP_MS = 60 * 1000;
@@ -169,7 +173,7 @@ export async function patch(
   const stopFlag = { shouldStop: false };
 
   // Default scripts directory is relative to this module
-  const scriptsDir = options.scriptsDir ?? join(import.meta.dirname, "../../scripts");
+  const scriptsDir = options.scriptsDir ?? join(__dirname, "../../scripts");
 
   // Setup signal handlers for graceful shutdown
   const cleanupSignals = setupSignalHandlers(stopFlag);
