@@ -29,7 +29,7 @@ Develop a feature by writing or editing code.
 
 ## Output
 
-Return JSON array of file edits. IMPORTANT: You MUST include "claude-farmer/docs/DEVELOP.json" as one of the edits. Output only the JSON array:
+Return JSON array of file edits. IMPORTANT: You MUST include "claude-farmer/docs/DEVELOP.json" as one of the edits. Output the JSON array in a markdown code block:
 \`\`\`json
 [
   {"path": "claude-farmer/docs/DEVELOP.json", "content": "{\\"changes\\": [...], \\"problems\\": [...]}"},

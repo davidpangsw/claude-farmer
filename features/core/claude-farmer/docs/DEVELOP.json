@@ -1,9 +1,21 @@
 {
   "changes": [
-    {"file": "utils/backoff.ts", "description": "Added performBackoffSleep helper function"},
-    {"file": "utils/index.ts", "description": "Exported new performBackoffSleep function"},
-    {"file": "commands/patch/index.ts", "description": "Use backoff helper, flag-based shutdown"},
-    {"file": "commands/develop/index.ts", "description": "Use backoff helper, flag-based shutdown"}
+    {
+      "file": "commands/patch/index.ts",
+      "description": "Removed unused ultrathink option, fixed commit message to use relative paths"
+    },
+    {
+      "file": "commands/develop/index.ts",
+      "description": "Removed unused ultrathink option"
+    },
+    {
+      "file": "claude/types.ts",
+      "description": "Fixed comment to say default: false instead of default: true"
+    },
+    {
+      "file": "claude/prompts/develop.ts",
+      "description": "Clarified output instruction to mention markdown code block"
+    }
   ],
   "problems": []
 }

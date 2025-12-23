@@ -10,7 +10,7 @@
  */
 
 import { spawnSync } from "child_process";
-import { basename } from "path";
+import { basename, relative } from "path";
 import { review } from "../../tasks/review/index.js";
 import { develop } from "../../tasks/develop/index.js";
 import { createIterationLogger, IterationLogger } from "../../logging/index.js";
@@ -25,8 +25,6 @@ import type { AIModel } from "../../types.js";
 export interface PatchOptions {
   /** Run once instead of looping */
   once?: boolean;
-  /** Enable ultrathink mode for AI (extended thinking) */
-  ultrathink?: boolean;
   /** @internal For testing - custom sleep function */
   _sleepFn?: (ms: number) => Promise<void>;
 }
@@ -97,10 +95,10 @@ export async function patch(
 
         // Commit changes or handle no-edits case
         if (developResult.edits.length > 0) {
-          // Build meaningful commit message
+          // Build meaningful commit message using relative paths for uniqueness
           const fileCount = developResult.edits.length;
           const fileNames = developResult.edits
-            .map(e => basename(e.path))
+            .map(e => relative(workingDirPath, e.path))
             .slice(0, 3)
             .join(", ");
           const suffix = fileCount > 3 ? ` and ${fileCount - 3} more` : "";

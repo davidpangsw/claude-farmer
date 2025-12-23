@@ -19,8 +19,6 @@ import type { AIModel, DevelopResult } from "../../types.js";
 export interface DevelopOptions {
   /** Run once instead of looping (default: true) */
   once?: boolean;
-  /** Enable ultrathink mode for AI (extended thinking) */
-  ultrathink?: boolean;
   /** @internal For testing - custom sleep function */
   _sleepFn?: (ms: number) => Promise<void>;
 }

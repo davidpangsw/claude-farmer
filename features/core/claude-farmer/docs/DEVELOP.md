@@ -2,16 +2,21 @@
 
 ## Changes Made
 
-### Medium Priority
-1. **Extracted backoff helper** (`utils/backoff.ts`): Added `performBackoffSleep()` function to reduce code duplication in `commands/patch/index.ts` and `commands/develop/index.ts`. The "log, finalize, sleep, update backoff" pattern was repeated 4 times.
+1. **Removed unused `ultrathink` options** from `PatchOptions` and `DevelopOptions` interfaces
+   - The `ai` parameter is already constructed with ultrathink settings before being passed to these commands
+   - Removed dead code that was never wired up
 
-### Low Priority
-1. **Fixed shutdown handler behavior**: Changed from `process.exit(0)` to flag-based approach in both patch and develop commands. This allows the finally block to execute properly, cleaning up signal handlers. Double Ctrl+C still force-exits.
+2. **Fixed commit message uniqueness** in `commands/patch/index.ts`
+   - Changed from `basename(e.path)` to using relative paths from working directory
+   - Prevents duplicate names like "updated index.ts, index.ts" when files exist in different directories
 
-2. **DEVELOP_PROMPT wording**: Already addressed in current code - says "Output only the JSON array".
+3. **Fixed type comment mismatch** in `claude/types.ts`
+   - Updated comment from "(default: true)" to "(default: false)" to match actual implementation
+
+4. **Improved DEVELOP_PROMPT clarity** in `claude/prompts/develop.ts`
+   - Changed "Output only the JSON array" to "Output the JSON array in a markdown code block"
+   - This matches the example that shows a code block
 
 ## Problems Encountered
-- None
 
-## Notes
-- Web search availability clarification (from REVIEW.md) is a documentation/prerequisite question, not a code change.
+- None
