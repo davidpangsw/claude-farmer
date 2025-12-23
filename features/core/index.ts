@@ -14,7 +14,6 @@ export type {
   DevelopResult,
   FileSystem,
   AIModel,
-  CoreConfig,
 } from "./types.js";
 
 export { gatherWorkingDirContext } from "./context.js";

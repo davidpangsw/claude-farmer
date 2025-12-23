@@ -8,11 +8,9 @@
  *   claude-farmer patch [working_directory] [options]
  *
  * Commands:
- *   patch  - Run Review → Develop cycle with git versioning
+ *   patch  - Run Review → Develop → Commit cycle
  *
  * Options:
- *   --trunk <branch>     - Trunk branch to branch from (default: develop)
- *   --checkout <branch>  - Feature branch to work on (default: features/<working_directory_name>)
  *   --once               - Run once instead of looping
  *   --help               - Show this help message
  *
@@ -20,10 +18,10 @@
  *   <working_directory>/
  *   └── claude-farmer/
  *       ├── GOAL.md       # Human-written specification
- *       └── docs/         # Markdown files for AI to read/write
+ *       └── docs/         # Auto-generated markdown files
  */
 
-import { join, basename, resolve } from "path";
+import { join, resolve } from "path";
 import { execSync } from "child_process";
 import { promises as fsPromises } from "fs";
 import { glob } from "fs/promises";
@@ -81,44 +79,26 @@ Usage:
   claude-farmer patch [working_directory] [options]
 
 Commands:
-  patch   Run Review → Develop cycle with git versioning
+  patch   Run Review → Develop → Commit cycle
 
 Options:
-  --trunk <branch>     Trunk branch to branch from (default: develop)
-  --checkout <branch>  Feature branch to work on (default: features/<working_directory_name>)
-  --once               Run once instead of looping (default: loop)
+  --once               Run once instead of looping (default: loop forever)
   --help               Show this help message
 
 Examples:
   claude-farmer patch                           # Use current directory
   claude-farmer patch ./features/myfeature      # Specify working directory
-  claude-farmer patch --trunk main              # Use main as trunk branch
-  claude-farmer patch --checkout my-branch      # Use custom feature branch
   claude-farmer patch --once                    # Run single iteration
 `);
 }
 
-function getArgValue(args: string[], flag: string): string | undefined {
-  const index = args.indexOf(flag);
-  if (index !== -1 && index + 1 < args.length) {
-    return args[index + 1];
-  }
-  return undefined;
-}
-
 async function runPatch(
   workingDir: string,
-  branchName: string,
   projectRoot: string,
   fs: FileSystem,
   ai: ClaudeCodeAI,
   loop: boolean
 ): Promise<void> {
-  const scriptsDir = join(projectRoot, "features", "core", "scripts");
-  const checkoutScript = join(scriptsDir, "git-patch-checkout.sh");
-  const completeScript = join(scriptsDir, "git-patch-complete.sh");
-
-  const maxIterations = loop ? 10 : 1;
   let iterations = 0;
 
   do {
@@ -127,50 +107,47 @@ async function runPatch(
       console.log(`\n=== Iteration ${iterations} ===`);
     }
 
-    // Step 1: Git checkout (create patch branch)
-    console.log("\n[1/4] Creating patch branch...");
-    try {
-      const checkoutOutput = execSync(`bash "${checkoutScript}" "${branchName}"`, {
-        cwd: projectRoot,
-        encoding: "utf-8",
-      });
-      console.log(checkoutOutput);
-    } catch (error) {
-      if (error instanceof Error && "stderr" in error) {
-        console.error((error as { stderr: string }).stderr);
-      }
-      throw new Error("Failed to create patch branch");
-    }
-
-    // Step 2: Review
-    console.log("\n[2/4] Running review...");
+    // Step 1: Review
+    console.log("\n[1/3] Running review...");
     const reviewResult = await review(workingDir, fs, ai);
     console.log(`Review written to: ${reviewResult.reviewPath}`);
 
-    // Step 3: Develop
-    console.log("\n[3/4] Running develop...");
+    // Step 2: Develop
+    console.log("\n[2/3] Running develop...");
     const developResult = await develop(workingDir, fs, ai);
     console.log(`Applied ${developResult.edits.length} file edits`);
     for (const edit of developResult.edits) {
       console.log(`  - ${edit.path}`);
     }
 
-    // Step 4: Git complete (commit, merge, tag)
-    console.log("\n[4/4] Completing patch...");
+    // Step 3: Commit
+    console.log("\n[3/3] Committing changes...");
     try {
-      const completeOutput = execSync(
-        `bash "${completeScript}" "${branchName}" "Auto-generated patch"`,
-        {
+      // Stage all changes
+      execSync("git add -A", { cwd: projectRoot, encoding: "utf-8" });
+
+      // Check if there are changes to commit
+      const status = execSync("git status --porcelain", {
+        cwd: projectRoot,
+        encoding: "utf-8",
+      });
+
+      if (status.trim()) {
+        // Commit with meaningful message
+        const message = `claude-farmer: iteration ${iterations}`;
+        execSync(`git commit -m "${message}"`, {
           cwd: projectRoot,
           encoding: "utf-8",
-        }
-      );
-      console.log(completeOutput);
+        });
+        console.log(`Committed: ${message}`);
+      } else {
+        console.log("No changes to commit.");
+      }
     } catch (error) {
       if (error instanceof Error && "stderr" in error) {
         console.error((error as { stderr: string }).stderr);
       }
-      throw new Error("Failed to complete patch");
+      throw new Error("Failed to commit changes");
     }
 
     // Check if we should continue looping
@@ -178,7 +155,7 @@ async function runPatch(
       console.log("\nNo more changes needed.");
       break;
     }
-  } while (loop && iterations < maxIterations);
+  } while (loop);
 }
 
 async function main(): Promise<void> {
@@ -197,27 +174,19 @@ async function main(): Promise<void> {
   }
 
   // Parse arguments - working_directory is optional positional arg after command
-  // It's the first non-flag argument after "patch"
   let workingDirArg: string | undefined;
   for (let i = 1; i < args.length; i++) {
     if (!args[i].startsWith("--")) {
       workingDirArg = args[i];
       break;
-    } else if (args[i] === "--trunk" || args[i] === "--checkout") {
-      i++; // Skip the value of these flags
     }
   }
 
-  const trunk = getArgValue(args, "--trunk") || "develop";
   const once = args.includes("--once");
-  const loop = !once; // Default is loop
+  const loop = !once; // Default is loop forever
 
   // Resolve working directory (default to current directory)
   const workingDir = workingDirArg ? resolve(workingDirArg) : process.cwd();
-  const workingDirName = basename(workingDir);
-
-  // Feature branch name (default: features/<working_directory_name>)
-  const branchName = getArgValue(args, "--checkout") || `features/${workingDirName}`;
 
   // Determine project root (current directory where git repo is)
   const projectRoot = process.cwd();
@@ -234,12 +203,10 @@ async function main(): Promise<void> {
 
   console.log(`Claude Farmer - Patch command`);
   console.log(`Working directory: ${workingDir}`);
-  console.log(`Feature branch: ${branchName}`);
-  console.log(`Trunk: ${trunk}`);
   console.log(`Mode: ${loop ? "loop" : "once"}`);
 
   try {
-    await runPatch(workingDir, branchName, projectRoot, fs, ai, loop);
+    await runPatch(workingDir, projectRoot, fs, ai, loop);
     console.log("\nDone!");
   } catch (error) {
     console.error("Error:", error instanceof Error ? error.message : error);

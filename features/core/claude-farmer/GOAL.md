@@ -15,7 +15,7 @@ The farmer expects this structure in the working directory:
 <working_directory>/
 ├── claude-farmer/
 │   ├── GOAL.md       # Human-written specification (do not let AI edit)
-│   └── docs/         # Markdown files for AI to read/write
+│   └── docs/         # Auto-generated markdown files
 └── ...               # Source code, tests, etc.
 ```
 
@@ -44,23 +44,14 @@ Tasks are building blocks orchestrated into commands.
 Usage: `claude-farmer patch [working_directory] [options]`
 
 Options:
-- `--trunk <branch>` - Trunk branch to branch from (default: `develop`)
-- `--checkout <branch>` - Feature branch to work on (default: `features/<working_directory_name>`)
 - `--once` - Run once instead of looping
 
 Workflow:
-1. Execute git checkout script:
-   - Read git tag to get `major.minor.patch` version (default: `0.0.0`)
-   - Increment patch version
-   - Checkout new subbranch `<branch_name>/v<major>.<minor>.<patch>`
-2. Perform **Review**
-3. Perform **Develop**
-4. Execute git complete script:
-   - Commit changes
-   - Merge back to feature branch
-   - Tag the new version
+1. Perform **Review**
+2. Perform **Develop**
+3. Commit with meaningful message
 
-Default: Loop mode for iterative improvement.
+Default: Loop forever for iterative improvement until user stops it.
 
 ## AI Integration
 

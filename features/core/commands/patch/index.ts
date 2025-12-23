@@ -2,10 +2,9 @@
  * Patch command implementation.
  *
  * Orchestrates the patch workflow:
- * 1. Execute git-patch-checkout.sh
- * 2. Perform Review
- * 3. Perform Develop
- * 4. Execute git-patch-complete.sh
+ * 1. Perform Review
+ * 2. Perform Develop
+ * 3. Commit with meaningful message
  *
  * Supports loop mode (default) and --once flag.
  */
@@ -14,10 +13,11 @@ import { execSync } from "child_process";
 import { join, basename } from "path";
 import { review } from "../../tasks/review/index.js";
 import { develop } from "../../tasks/develop/index.js";
-import type { FileSystem, AIModel, CoreConfig } from "../../types.js";
+import type { FileSystem, AIModel } from "../../types.js";
 
 export interface PatchOptions {
   once?: boolean;
+  scriptsDir?: string;
 }
 
 export interface PatchResult {
@@ -26,16 +26,11 @@ export interface PatchResult {
 }
 
 /**
- * Executes a shell script in the scripts directory.
+ * Executes a shell script.
  */
-function executeScript(
-  scriptName: string,
-  scriptsDir: string,
-  projectRoot: string
-): void {
-  const scriptPath = join(scriptsDir, scriptName);
+function executeScript(scriptPath: string, cwd: string): void {
   execSync(`bash "${scriptPath}"`, {
-    cwd: projectRoot,
+    cwd,
     stdio: "inherit",
   });
 }
@@ -57,26 +52,32 @@ async function runPatchIteration(
 
 /**
  * Executes the patch command for a working directory.
+ *
+ * @param workingDirPath - The path to the working directory
+ * @param fs - File system interface
+ * @param ai - AI model interface
+ * @param options - Patch options including --once flag and optional scriptsDir
  */
 export async function patch(
   workingDirPath: string,
-  scriptsDir: string,
-  config: CoreConfig,
   fs: FileSystem,
   ai: AIModel,
   options: PatchOptions = {}
 ): Promise<PatchResult> {
   let iterations = 0;
 
+  // Default scripts directory is relative to this module
+  const scriptsDir = options.scriptsDir ?? join(import.meta.dirname, "../../scripts");
+
   do {
-    // Execute git-patch-checkout.sh
-    executeScript("git-patch-checkout.sh", scriptsDir, config.projectRoot);
+    // Prepare for patch iteration
+    executeScript(join(scriptsDir, "git-patch-checkout.sh"), workingDirPath);
 
     // Run review and develop
     await runPatchIteration(workingDirPath, fs, ai);
 
-    // Execute git-patch-complete.sh
-    executeScript("git-patch-complete.sh", scriptsDir, config.projectRoot);
+    // Commit changes
+    executeScript(join(scriptsDir, "git-patch-complete.sh"), workingDirPath);
 
     iterations++;
   } while (!options.once);

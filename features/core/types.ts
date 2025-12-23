@@ -76,9 +76,3 @@ export interface AIModel {
   generateEdits(context: WorkingDirContext): Promise<FileEdit[]>;
 }
 
-/**
- * Configuration for the core feature.
- */
-export interface CoreConfig {
-  projectRoot: string;
-}

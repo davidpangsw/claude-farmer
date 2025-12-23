@@ -76,7 +76,7 @@ Options:
 
 If Claude Farmer fails mid-iteration (e.g., network error, insufficient tokens), you can run `patch` again. If it doesn't work, there may be some problem in your git status, go back to step 3.
 
-### 6b. Manual changes on your GOAL.md or other feature files
+### 6b. Manual changes on your GOAL.md or other files
 - If you want manual changes, like:
   - Installing external dependencies for Claude Farmer to work better
   - Fix your GOAL.md

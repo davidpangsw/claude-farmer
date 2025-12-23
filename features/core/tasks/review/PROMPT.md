@@ -1,23 +1,20 @@
 # Review Prompt
 
-Review a feature and provide improvement suggestions. Additional research may be performed and added to RESEARCH.md if needed.
+Review a working directory and provide improvement suggestions. Research best practices via web search before generating suggestions.
 
 ## Context Provided
 
-- **GOAL.md**: Feature goals
-- **RESEARCH.md**: Research findings (if available)
+- **GOAL.md**: Project goals
 - **Source Files**: Current implementation
 
 ## Your Task
 
-Analyze implementation against goals:
-
-1. **Goal Alignment**: Does it meet stated goals?
-2. **Code Quality**: Issues to address?
-3. **Missing Features**: What's incomplete?
-4. **Testing**: Adequate coverage?
-
-If research is needed, update RESEARCH.md first.
+1. Research best practices via web search relevant to the goals
+2. Analyze implementation against goals:
+   - **Goal Alignment**: Does it meet stated goals?
+   - **Code Quality**: Issues to address?
+   - **Missing Features**: What's incomplete?
+   - **Testing**: Adequate coverage?
 
 ## Output Guidelines
 
@@ -29,7 +26,7 @@ If research is needed, update RESEARCH.md first.
 ## Output Format
 
 ```markdown
-# Review: [Feature Name]
+# Review
 
 ## Summary
 One-line assessment.
