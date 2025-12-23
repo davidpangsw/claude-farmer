@@ -94,4 +94,101 @@ describe("develop", () => {
     expect(result.edits).toHaveLength(1);
     expect(fs.getFile("/project/features/myfeature/utils/helpers/format.ts")).toBeDefined();
   });
+
+  it("rejects paths outside working directory (path traversal)", async () => {
+    const fs = new MockFileSystem({
+      "/project/features/myfeature/claude-farmer/GOAL.md": "# Goal",
+    });
+
+    const edits: FileEdit[] = [
+      {
+        // Attempt to write outside working directory
+        path: "/project/features/myfeature/../../../etc/passwd",
+        content: "malicious content",
+      },
+      {
+        // Valid path within working directory
+        path: "/project/features/myfeature/index.ts",
+        content: "export const x = 1;",
+      },
+    ];
+
+    const ai = new MockAIModel("", edits);
+
+    const result = await develop("/project/features/myfeature", fs, ai);
+
+    // Only the valid edit should be applied
+    expect(result.edits).toHaveLength(1);
+    expect(result.edits[0].path).toBe("/project/features/myfeature/index.ts");
+
+    // Malicious path should not have been written
+    expect(fs.getFile("/etc/passwd")).toBeUndefined();
+  });
+
+  it("rejects absolute paths outside working directory", async () => {
+    const fs = new MockFileSystem({
+      "/project/claude-farmer/GOAL.md": "# Goal",
+    });
+
+    const edits: FileEdit[] = [
+      {
+        path: "/tmp/evil.ts",
+        content: "malicious",
+      },
+      {
+        path: "/project-evil/index.ts",
+        content: "malicious - similar prefix",
+      },
+    ];
+
+    const ai = new MockAIModel("", edits);
+
+    const result = await develop("/project", fs, ai);
+
+    // No edits should be applied
+    expect(result.edits).toHaveLength(0);
+  });
+
+  it("accepts relative paths within working directory", async () => {
+    const fs = new MockFileSystem({
+      "/project/claude-farmer/GOAL.md": "# Goal",
+    });
+
+    const edits: FileEdit[] = [
+      {
+        // Relative path (AI might return these)
+        path: "/project/src/index.ts",
+        content: "export const x = 1;",
+      },
+    ];
+
+    const ai = new MockAIModel("", edits);
+
+    const result = await develop("/project", fs, ai);
+
+    expect(result.edits).toHaveLength(1);
+  });
+
+  it("dry-run mode does not write files", async () => {
+    const fs = new MockFileSystem({
+      "/project/claude-farmer/GOAL.md": "# Goal",
+    });
+
+    const edits: FileEdit[] = [
+      {
+        path: "/project/index.ts",
+        content: "export const x = 1;",
+      },
+    ];
+
+    const ai = new MockAIModel("", edits);
+
+    const result = await develop("/project", fs, ai, { dryRun: true });
+
+    // Edits should be returned
+    expect(result.edits).toHaveLength(1);
+
+    // But file should NOT be written
+    expect(fs.getFile("/project/index.ts")).toBeUndefined();
+  });
 });

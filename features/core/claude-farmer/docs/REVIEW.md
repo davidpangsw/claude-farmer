@@ -1,10 +1,10 @@
-Now I have the complete picture. Here's my review:
+Now I have a complete picture. Let me write the review:
 
 ```markdown
 # Review
 
 ## Summary
-Previous high-priority issues resolved; one critical wiring bug remains with ultrathink option not being passed through.
+Previous review's high-priority items were already resolved; main concern is missing path validation for security.
 
 ## Goal Alignment
 - [x] Review task: reads GOAL, source → produces REVIEW.md
@@ -12,41 +12,36 @@ Previous high-priority issues resolved; one critical wiring bug remains with ult
 - [x] Patch command: orchestrates review → develop → commit loop
 - [x] Tasks not exposed: only commands exported in index.ts
 - [x] Logging with rotation (100 files max)
-- [x] Real-time logging via appendFile (now properly awaited)
+- [x] Real-time logging via appendFile
 - [x] Exponential backoff with reset on edits
 - [x] Graceful shutdown handling (SIGINT/SIGTERM)
-- [ ] **ultrathink user control**: Option exists in PatchOptions but is never used
+- [x] Local stopFlag (not global mutable state)
+- [x] Git uncommitted changes warning implemented
 
 ## Suggestions
 
 ### High Priority
-1. **Wire ultrathink option through patch()** (`commands/patch/index.ts`)
-   - `PatchOptions.ultrathink` exists but is dead code
-   - The `ai: AIModel` is passed in pre-configured, so the option is ignored
-   - Fix options:
-     a) Remove `ultrathink` from PatchOptions (breaking change - caller must configure AI)
-     b) Change signature to accept AI factory/options instead of configured AI
-     c) Document that caller must configure ultrathink when creating ClaudeCodeAI
-
-2. **Global mutable `shouldStop` state** (`commands/patch/index.ts:22`)
-   - Module-level `let shouldStop = false;` creates race condition if `patch()` called concurrently
-   - Fix: Move to instance/closure scope within each `patch()` call
+1. **Add path validation in develop task** (`tasks/develop/index.ts:27-32`)
+   - AI-generated file paths are written directly without validation
+   - Malformed or malicious paths could write outside working directory
+   - Fix: Validate `edit.path.startsWith(workingDirPath)` before writing
 
 ### Medium Priority
-1. **Expand git-patch-checkout.sh** (`scripts/git-patch-checkout.sh`)
-   - Currently only verifies git repo exists
-   - Add: warn if uncommitted changes exist (script comments mention stash/fetch but unimplemented)
-
-2. **Add E2E integration test for ClaudeCodeAI**
+1. **Add E2E integration test for ClaudeCodeAI**
    - All tests use MockAIModel
    - Add one test that spawns actual `claude` CLI (skip if not installed)
+   - Validates real output parsing works with actual Claude responses
+
+2. **Document ultrathink configuration pattern**
+   - GOAL says "could be enabled if user indicates" 
+   - Currently configured via `ClaudeCodeAI` constructor, not exposed in patch CLI
+   - Either add `--ultrathink` to CLI or document the constructor pattern
 
 ### Low Priority
-1. **Consider removing dead PatchOptions.ultrathink** if option (a) above is chosen
-2. **Add config file support** (`claude-farmer/config.json`) for file patterns
+1. **Consider adding `--dry-run` option to patch command**
+   - Would allow seeing proposed edits without committing
 
 ## Next Steps
-1. Fix ultrathink wiring - either remove option or make it functional
-2. Make `shouldStop` local to each `patch()` invocation
-3. Add git uncommitted changes warning to checkout script
+1. Add path validation to `develop()` to prevent writes outside working directory
+2. Add integration test for ClaudeCodeAI (skip when `claude` CLI not found)
 ```

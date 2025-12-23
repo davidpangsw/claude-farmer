@@ -25,8 +25,14 @@ const MAX_SLEEP_MS = 24 * 60 * 60 * 1000;
 const MAX_ERROR_RETRIES = 3;
 
 export interface PatchOptions {
+  /** Run once instead of looping */
   once?: boolean;
+  /** Directory containing git scripts */
   scriptsDir?: string;
+  /** Enable ultrathink mode for AI (extended thinking) */
+  ultrathink?: boolean;
+  /** Dry run - show proposed changes without writing files or committing */
+  dryRun?: boolean;
   /** @internal For testing - custom sleep function */
   _sleepFn?: (ms: number) => Promise<void>;
 }
@@ -146,7 +152,7 @@ function setupSignalHandlers(
  * @param workingDirPath - The path to the working directory
  * @param fs - File system interface
  * @param ai - AI model interface (configure ultrathink when creating the AI instance)
- * @param options - Patch options including --once flag and optional scriptsDir
+ * @param options - Patch options including --once flag, --ultrathink, --dry-run, and optional scriptsDir
  */
 export async function patch(
   workingDirPath: string,
@@ -179,15 +185,26 @@ export async function patch(
       const logger = createIterationLogger(workingDirPath, fs, iterations);
 
       try {
-        // Prepare for patch iteration
-        await executeScript(join(scriptsDir, "git-patch-checkout.sh"), workingDirPath, [], logger);
+        // Prepare for patch iteration (skip git operations in dry-run mode)
+        if (!options.dryRun) {
+          await executeScript(join(scriptsDir, "git-patch-checkout.sh"), workingDirPath, [], logger);
+        } else {
+          await logger.log("[DRY RUN] Skipping git checkout");
+        }
 
         // Run review first, then develop based on review feedback
         const reviewResult = await review(workingDirPath, fs, ai);
         await logger.logReview(reviewResult.reviewPath, reviewResult.content.length);
 
-        const developResult = await develop(workingDirPath, fs, ai);
+        const developResult = await develop(workingDirPath, fs, ai, { dryRun: options.dryRun });
         await logger.logDevelop(developResult.edits);
+
+        if (options.dryRun) {
+          await logger.log("[DRY RUN] Would edit the following files:");
+          for (const edit of developResult.edits) {
+            await logger.log(`  - ${edit.path}`);
+          }
+        }
 
         // Reset error counter on successful AI calls
         consecutiveErrors = 0;
@@ -203,13 +220,17 @@ export async function patch(
           const suffix = fileCount > 3 ? ` and ${fileCount - 3} more` : "";
           const commitMessage = `claude-farmer: updated ${fileNames}${suffix}`;
 
-          await executeScript(
-            join(scriptsDir, "git-patch-complete.sh"),
-            workingDirPath,
-            [commitMessage],
-            logger
-          );
-          await logger.logCommit(commitMessage);
+          if (!options.dryRun) {
+            await executeScript(
+              join(scriptsDir, "git-patch-complete.sh"),
+              workingDirPath,
+              [commitMessage],
+              logger
+            );
+            await logger.logCommit(commitMessage);
+          } else {
+            await logger.log(`[DRY RUN] Would commit with message: ${commitMessage}`);
+          }
 
           // Reset backoff on successful edits
           sleepMs = MIN_SLEEP_MS;

@@ -444,4 +444,33 @@ describe("patch", () => {
     expect(result1.workingDirName).toBe("project1");
     expect(result2.workingDirName).toBe("project2");
   });
+
+  it("dry-run mode skips git operations and file writes", async () => {
+    const fs = new MockFileSystem({
+      "/project/claude-farmer/GOAL.md": "# Goal",
+    });
+
+    const edits: FileEdit[] = [
+      { path: "/project/index.ts", content: "export const x = 1;" },
+    ];
+    const ai = new MockAIModel("# Review", edits);
+
+    const result = await patch("/project", fs, ai, { once: true, dryRun: true });
+
+    expect(result.iterations).toBe(1);
+
+    // Git scripts should NOT have been called
+    expect(mockedExecSync).not.toHaveBeenCalled();
+
+    // File should NOT have been written (except REVIEW.md which is written by review task)
+    expect(fs.getFile("/project/index.ts")).toBeUndefined();
+
+    // Log should indicate dry run
+    const allFiles = fs.getAllFiles();
+    const logFiles = Array.from(allFiles.entries()).filter(([p]) =>
+      p.includes("claude-farmer/logs/")
+    );
+    const logContent = logFiles[0][1];
+    expect(logContent).toContain("[DRY RUN]");
+  });
 });
