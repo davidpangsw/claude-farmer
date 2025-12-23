@@ -7,91 +7,10 @@
 
 import type { AIModel, WorkingDirContext, FileEdit } from "../types.js";
 import type { ClaudeCodeOptions, ClaudeCodeResult } from "./types.js";
+import { REVIEW_PROMPT, DEVELOP_PROMPT } from "./prompts/index.js";
 import { spawn } from "child_process";
 
 export type { ClaudeCodeOptions, ClaudeCodeResult } from "./types.js";
-
-// Embedded prompts (no need for external files)
-const REVIEW_PROMPT = `# Review Prompt
-
-Review criticially a working directory and provide improvement suggestions. Research best practices via web search before generating suggestions.
-
-## Context Provided
-
-- **GOAL.md**: Project goals
-- **Source Files**: Current implementation
-
-## Your Task
-
-1. Research best practices via web search relevant to the goals
-2. Analyze implementation against goals:
-   - **Goal Alignment**: Does it meet stated goals?
-   - **Code Quality**: Issues to address?
-   - **Missing Features**: What's incomplete?
-   - **Testing**: Adequate coverage?
-
-## Output Guidelines
-
-- Be concise - actionable items only
-- Prioritize by impact
-- Skip empty sections
-- No generic advice - be specific
-- Do not force feature. Don't bring up some new feature that is irrelavant to the GOAL.md
-
-## Output Format
-
-\`\`\`markdown
-# Review
-
-## Summary
-One-line assessment.
-
-## Goal Alignment
-- [x] Goal 1
-- [ ] Goal 2: missing X
-
-## Suggestions
-
-### High Priority
-1. ...
-
-### Medium Priority
-1. ...
-
-## Next Steps
-1. ...
-\`\`\``;
-
-const DEVELOP_PROMPT = `# Develop Prompt
-
-Develop a feature by writing or editing code.
-
-## Context Provided
-
-- **GOAL.md**: Feature goals
-- **REVIEW.md**: Review suggestions (if available)
-- **Source Files**: Current implementation (if any)
-
-## Your Task
-
-1. Implement what GOAL.md specifies
-2. Fix issues from REVIEW.md (if present)
-3. Write tests for new functionality
-4. Match existing code patterns
-
-## Guidelines
-
-- Minimal, focused changes
-- Clean, readable code
-- Error handling where needed
-- JSDoc for public APIs only
-
-## Output
-
-Return JSON array of file edits:
-\`\`\`json
-[{"path": "...", "content": "..."}]
-\`\`\``;
 
 /**
  * Type guard to validate FileEdit structure (lenient).

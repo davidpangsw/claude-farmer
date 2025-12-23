@@ -2,16 +2,13 @@
  * Context gathering utilities for working directories.
  */
 
-import type {
-  WorkingDirContext,
-  FileContent,
-  FileSystem,
-} from "./types.js";
+import type { WorkingDirContext, FileContent } from "./types.js";
+import { readFile, access } from "fs/promises";
+import { glob } from "glob";
 import { join, basename, sep } from "path";
 
 /**
  * Default file patterns to gather as source files.
- * Includes common source file extensions.
  */
 const DEFAULT_SOURCE_PATTERNS = [
   "**/*.ts",
@@ -24,29 +21,27 @@ const DEFAULT_SOURCE_PATTERNS = [
 
 /**
  * Gathers the context needed for reviewing or developing a working directory.
- *
- * @param workingDirPath - The path to the working directory
- * @param fs - File system interface
- * @param patterns - Optional array of glob patterns for source files (default: common extensions)
  */
 export async function gatherWorkingDirContext(
   workingDirPath: string,
-  fs: FileSystem,
   patterns: string[] = DEFAULT_SOURCE_PATTERNS
 ): Promise<WorkingDirContext> {
   const workingDirName = basename(workingDirPath);
 
   // Read GOAL.md from claude-farmer directory
   const goalPath = join(workingDirPath, "claude-farmer", "GOAL.md");
-  const goalContent = await fs.readFile(goalPath);
+  const goalContent = await readFile(goalPath, "utf-8");
   const goal: FileContent = { path: goalPath, content: goalContent };
 
   // Try to read REVIEW.md if it exists
   let review: FileContent | undefined;
   const reviewPath = join(workingDirPath, "claude-farmer", "docs", "REVIEW.md");
-  if (await fs.exists(reviewPath)) {
-    const reviewContent = await fs.readFile(reviewPath);
+  try {
+    await access(reviewPath);
+    const reviewContent = await readFile(reviewPath, "utf-8");
     review = { path: reviewPath, content: reviewContent };
+  } catch {
+    // REVIEW.md doesn't exist yet
   }
 
   // Gather source files using provided patterns, excluding claude-farmer/
@@ -55,7 +50,7 @@ export async function gatherWorkingDirContext(
   const seenPaths = new Set<string>();
 
   for (const pattern of patterns) {
-    const files = await fs.listFiles(workingDirPath, pattern);
+    const files = await glob(`${workingDirPath}/${pattern}`, { nodir: true, absolute: true });
     for (const filePath of files) {
       // Skip files in or under the claude-farmer directory
       if (filePath.startsWith(claudeFarmerPath + sep) || filePath === claudeFarmerPath) {
@@ -67,7 +62,7 @@ export async function gatherWorkingDirContext(
       }
       seenPaths.add(filePath);
 
-      const content = await fs.readFile(filePath);
+      const content = await readFile(filePath, "utf-8");
       sourceFiles.push({ path: filePath, content });
     }
   }

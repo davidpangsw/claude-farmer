@@ -7,8 +7,9 @@
  * Logs are written IN REAL TIME - each log line is immediately appended to the file.
  */
 
+import { writeFile, appendFile, mkdir, unlink } from "fs/promises";
+import { glob } from "glob";
 import { join } from "path";
-import type { FileSystem } from "../types.js";
 
 const MAX_LOG_FILES = 100;
 const LOGS_DIR = "claude-farmer/logs";
@@ -38,7 +39,6 @@ export class IterationLogger {
 
   constructor(
     private workingDirPath: string,
-    private fs: FileSystem,
     private iteration: number
   ) {
     this.startTime = new Date();
@@ -53,12 +53,12 @@ export class IterationLogger {
     if (this.initialized) return;
 
     const logsDir = join(this.workingDirPath, LOGS_DIR);
-    await this.fs.mkdir(logsDir);
+    await mkdir(logsDir, { recursive: true });
 
     // Write initial message
     const timestamp = this.startTime.toISOString();
     const message = `[${timestamp}] === Iteration ${this.iteration} started at ${timestamp} ===\n`;
-    await this.fs.writeFile(this.logPath, message);
+    await writeFile(this.logPath, message, "utf-8");
 
     this.initialized = true;
   }
@@ -70,7 +70,7 @@ export class IterationLogger {
     await this.ensureInitialized();
     const timestamp = new Date().toISOString();
     const line = `[${timestamp}] ${message}\n`;
-    await this.fs.appendFile(this.logPath, line);
+    await appendFile(this.logPath, line, "utf-8");
   }
 
   /**
@@ -123,7 +123,6 @@ export class IterationLogger {
 
   /**
    * Finalizes the log and performs rotation.
-   * Also performs log rotation to keep only the last 100 files.
    */
   async finalize(): Promise<string> {
     const endTime = new Date();
@@ -142,7 +141,7 @@ export class IterationLogger {
    */
   private async rotateLogs(logsDir: string): Promise<void> {
     try {
-      const logFiles = await this.fs.listFiles(logsDir, "*.log");
+      const logFiles = await glob(`${logsDir}/*.log`, { nodir: true, absolute: true });
 
       if (logFiles.length <= MAX_LOG_FILES) {
         return;
@@ -154,7 +153,7 @@ export class IterationLogger {
       // Delete oldest files
       const filesToDelete = logFiles.slice(0, logFiles.length - MAX_LOG_FILES);
       for (const file of filesToDelete) {
-        await this.fs.deleteFile(file);
+        await unlink(file);
       }
     } catch {
       // Ignore rotation errors - logging should not break the main workflow
@@ -167,8 +166,7 @@ export class IterationLogger {
  */
 export function createIterationLogger(
   workingDirPath: string,
-  fs: FileSystem,
   iteration: number
 ): IterationLogger {
-  return new IterationLogger(workingDirPath, fs, iteration);
+  return new IterationLogger(workingDirPath, iteration);
 }

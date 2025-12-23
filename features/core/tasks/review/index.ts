@@ -6,29 +6,20 @@
  * Includes research via web search.
  */
 
-import type {
-  ReviewResult,
-  FileSystem,
-  AIModel,
-} from "../../types.js";
+import type { ReviewResult, AIModel } from "../../types.js";
 import { gatherWorkingDirContext } from "../../context.js";
+import { writeFile, mkdir } from "fs/promises";
 import { join, basename, dirname } from "path";
 
 /**
  * Reviews a working directory and generates improvement suggestions.
- *
- * @param workingDirPath - The path to the working directory
- * @param fs - File system interface
- * @param ai - AI model interface
- * @returns The review result with the generated content
  */
 export async function review(
   workingDirPath: string,
-  fs: FileSystem,
   ai: AIModel
 ): Promise<ReviewResult> {
   // Gather context
-  const context = await gatherWorkingDirContext(workingDirPath, fs);
+  const context = await gatherWorkingDirContext(workingDirPath);
 
   // Generate review using AI (includes research via web search)
   const reviewContent = await ai.generateReview(context);
@@ -38,9 +29,9 @@ export async function review(
 
   // Ensure docs directory exists
   const docsDir = dirname(reviewPath);
-  await fs.mkdir(docsDir);
+  await mkdir(docsDir, { recursive: true });
 
-  await fs.writeFile(reviewPath, reviewContent);
+  await writeFile(reviewPath, reviewContent, "utf-8");
 
   return {
     workingDirName: basename(workingDirPath),

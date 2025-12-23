@@ -12,69 +12,12 @@
  *
  * Options:
  *   --once               - Run once instead of looping
+ *   --ultrathink         - Enable extended thinking mode
  *   --help               - Show this help message
- *
- * Working directory structure:
- *   <working_directory>/
- *   └── claude-farmer/
- *       ├── GOAL.md       # Human-written specification
- *       └── docs/         # Auto-generated markdown files
  */
 
 import { resolve } from "path";
-import { promises as fsPromises } from "fs";
-import { join } from "path";
-import { glob } from "fs/promises";
 import { ClaudeCodeAI, patch } from "../features/core/index.js";
-import type { FileSystem } from "../features/core/index.js";
-
-// Node.js file system implementation
-class NodeFileSystem implements FileSystem {
-  async readFile(path: string): Promise<string> {
-    return fsPromises.readFile(path, "utf-8");
-  }
-
-  async writeFile(path: string, content: string): Promise<void> {
-    await fsPromises.writeFile(path, content, "utf-8");
-  }
-
-  async appendFile(path: string, content: string): Promise<void> {
-    await fsPromises.appendFile(path, content, "utf-8");
-  }
-
-  async exists(path: string): Promise<boolean> {
-    try {
-      await fsPromises.access(path);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  async listFiles(directory: string, pattern?: string): Promise<string[]> {
-    const globPattern = pattern || "**/*.ts";
-    const fullPattern = join(directory, globPattern);
-    const files: string[] = [];
-
-    try {
-      for await (const entry of glob(fullPattern)) {
-        files.push(entry);
-      }
-    } catch {
-      // Directory doesn't exist or no matches
-    }
-
-    return files;
-  }
-
-  async mkdir(path: string): Promise<void> {
-    await fsPromises.mkdir(path, { recursive: true });
-  }
-
-  async deleteFile(path: string): Promise<void> {
-    await fsPromises.unlink(path);
-  }
-}
 
 function printHelp(): void {
   console.log(`
@@ -129,8 +72,6 @@ async function main(): Promise<void> {
   // Resolve working directory (default to current directory)
   const workingDir = workingDirArg ? resolve(workingDirArg) : process.cwd();
 
-  const fs = new NodeFileSystem();
-
   const ai = new ClaudeCodeAI({
     cwd: workingDir,
     ultrathink,
@@ -141,7 +82,7 @@ async function main(): Promise<void> {
   console.log(`Mode: ${once ? "once" : "loop"}${ultrathink ? ", ultrathink" : ""}`);
 
   try {
-    const result = await patch(workingDir, fs, ai, { once, ultrathink });
+    const result = await patch(workingDir, ai, { once, ultrathink });
     console.log(`\nCompleted ${result.iterations} iteration(s)`);
   } catch (error) {
     console.error("Error:", error instanceof Error ? error.message : error);

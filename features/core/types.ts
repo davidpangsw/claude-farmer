@@ -47,20 +47,6 @@ export interface DevelopResult {
 }
 
 /**
- * Interface for file system operations.
- * This allows the core feature to be testable with mock implementations.
- */
-export interface FileSystem {
-  readFile(path: string): Promise<string>;
-  writeFile(path: string, content: string): Promise<void>;
-  appendFile(path: string, content: string): Promise<void>;
-  exists(path: string): Promise<boolean>;
-  listFiles(directory: string, pattern?: string): Promise<string[]>;
-  mkdir(path: string): Promise<void>;
-  deleteFile(path: string): Promise<void>;
-}
-
-/**
  * Interface for AI model operations.
  * This abstracts the AI backend to allow different implementations.
  */

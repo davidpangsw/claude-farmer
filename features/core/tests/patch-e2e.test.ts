@@ -8,11 +8,11 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { execSync } from "child_process";
 import { mkdtemp, rm, mkdir, writeFile, readFile } from "fs/promises";
+import { glob } from "glob";
 import { tmpdir } from "os";
 import { join } from "path";
 import { patch } from "../commands/patch/index.js";
 import { ClaudeCodeAI } from "../claude/index.js";
-import { NodeFileSystem } from "../fs.js";
 
 /**
  * Check if the claude CLI is available.
@@ -77,16 +77,14 @@ describe.skipIf(!CAN_RUN_E2E)("Patch E2E", () => {
   });
 
   it("runs a single patch iteration and produces edits", async () => {
-    const fs = new NodeFileSystem();
     const ai = new ClaudeCodeAI({
       cwd: tempDir,
       ultrathink: false, // Faster for tests
       timeout: 180000, // 3 minute timeout
     });
 
-    const result = await patch(tempDir, fs, ai, {
+    const result = await patch(tempDir, ai, {
       once: true,
-      dryRun: true, // Don't actually commit
     });
 
     expect(result.iterations).toBe(1);
@@ -97,8 +95,7 @@ describe.skipIf(!CAN_RUN_E2E)("Patch E2E", () => {
     expect(reviewContent.length).toBeGreaterThan(0);
 
     // Check that log was created
-    const fs2 = new NodeFileSystem();
-    const logFiles = await fs2.listFiles(join(tempDir, "claude-farmer", "logs"), "*.log");
+    const logFiles = await glob(`${tempDir}/claude-farmer/logs/*.log`);
     expect(logFiles.length).toBeGreaterThan(0);
   }, 240000); // 4 minute timeout for the test itself
 });

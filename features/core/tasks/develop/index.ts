@@ -5,62 +5,31 @@
  * and the relevant source code to implement requirements and address feedback.
  */
 
-import type {
-  DevelopResult,
-  FileSystem,
-  AIModel,
-} from "../../types.js";
+import type { DevelopResult, AIModel } from "../../types.js";
 import { gatherWorkingDirContext } from "../../context.js";
+import { writeFile, mkdir } from "fs/promises";
 import { dirname, basename, resolve, sep } from "path";
 
 /**
  * Validates that a file path is within the working directory.
  * Prevents path traversal attacks from AI-generated paths.
- *
- * @param filePath - The file path to validate
- * @param workingDirPath - The working directory path
- * @returns true if the path is safe, false otherwise
  */
 function isPathWithinWorkingDir(filePath: string, workingDirPath: string): boolean {
-  // Resolve both paths to absolute, normalized form
   const resolvedPath = resolve(workingDirPath, filePath);
   const resolvedWorkingDir = resolve(workingDirPath);
-
-  // Check if the resolved path starts with the working directory
-  // Add trailing separator to prevent matching partial directory names
-  // e.g., /project-evil should not match /project
-  // Use path.sep for cross-platform compatibility (Windows uses \, Unix uses /)
   return resolvedPath === resolvedWorkingDir ||
     resolvedPath.startsWith(resolvedWorkingDir + sep);
 }
 
 /**
- * Options for the develop task.
- */
-export interface DevelopOptions {
-  /** Dry run - return edits without writing files */
-  dryRun?: boolean;
-  /** Logger function for reporting rejected paths */
-  onPathRejected?: (path: string, reason: string) => void;
-}
-
-/**
  * Develops a working directory by generating and applying code edits.
- *
- * @param workingDirPath - The path to the working directory
- * @param fs - File system interface
- * @param ai - AI model interface
- * @param options - Optional settings
- * @returns The develop result with the applied edits
  */
 export async function develop(
   workingDirPath: string,
-  fs: FileSystem,
-  ai: AIModel,
-  options: DevelopOptions = {}
+  ai: AIModel
 ): Promise<DevelopResult> {
   // Gather context (including review if it exists)
-  const context = await gatherWorkingDirContext(workingDirPath, fs);
+  const context = await gatherWorkingDirContext(workingDirPath);
 
   // Generate edits using AI
   const edits = await ai.generateEdits(context);
@@ -70,26 +39,17 @@ export async function develop(
   for (const edit of edits) {
     // Validate path is within working directory
     if (!isPathWithinWorkingDir(edit.path, workingDirPath)) {
-      // Log rejected path for security transparency
-      const reason = `Path traversal blocked: ${edit.path} is outside working directory ${workingDirPath}`;
-      if (options.onPathRejected) {
-        options.onPathRejected(edit.path, reason);
-      } else {
-        // Default to console.warn if no callback provided
-        console.warn(`[develop] ${reason}`);
-      }
+      console.warn(`[develop] Path traversal blocked: ${edit.path} is outside working directory`);
       continue;
     }
 
     safeEdits.push(edit);
 
-    if (!options.dryRun) {
-      // Ensure parent directory exists
-      const dir = dirname(edit.path);
-      await fs.mkdir(dir);
+    // Ensure parent directory exists
+    const dir = dirname(edit.path);
+    await mkdir(dir, { recursive: true });
 
-      await fs.writeFile(edit.path, edit.content);
-    }
+    await writeFile(edit.path, edit.content, "utf-8");
   }
 
   return {
