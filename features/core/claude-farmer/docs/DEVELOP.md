@@ -2,14 +2,15 @@
 
 ## Changes Made
 
-1. **commands/patch/index.ts**: Changed `execSync("git add -A")` to `spawnSync("git", ["add", "-A"])` with proper error checking for consistent error handling
+### Bug Fix
+1. **logging/index.ts:42**: Fixed LRU eviction boundary check from `size <= MAX_CACHE_SIZE` to `size >= MAX_CACHE_SIZE` to prevent cache from temporarily growing beyond limit.
 
-2. **logging/index.ts**: Added LRU eviction strategy with MAX_CACHE_SIZE=10 to prevent unbounded stream cache growth
-
-3. **commands/patch/index.ts + commands/develop/index.ts**: Added SIGINT/SIGTERM handlers for graceful shutdown to ensure log streams flush properly when user presses Ctrl+C
-
-4. **tests/rate-limit.test.ts**: Added unit tests for rate limit handling to verify exponential backoff behavior when "Spending cap reached" errors occur
+### Code Quality Improvements
+1. **utils/backoff.ts**: Created new utility module with shared backoff logic (constants, duration formatting, next backoff calculation).
+2. **utils/index.ts**: Updated exports to include new backoff utilities.
+3. **commands/patch/index.ts**: Refactored to use shared backoff utilities, reducing code duplication.
+4. **commands/develop/index.ts**: Refactored to use shared backoff utilities, reducing code duplication.
+5. **claude/prompts/develop.ts**: Clarified instruction from "do not generate other text" to "Output only the JSON array" to resolve conflicting wording.
 
 ## Problems Encountered
-
 - None

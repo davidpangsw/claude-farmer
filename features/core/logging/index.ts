@@ -39,18 +39,16 @@ function formatTimestamp(date: Date): string {
  * Evict least recently used entries when cache exceeds max size.
  */
 function evictLRU(): void {
-  if (streamCache.size <= MAX_CACHE_SIZE) {
-    return;
-  }
+  if (streamCache.size >= MAX_CACHE_SIZE) {
+    // Find and remove least recently accessed entries
+    const entries = Array.from(streamCache.entries());
+    entries.sort((a, b) => a[1].lastAccessed - b[1].lastAccessed);
 
-  // Find and remove least recently accessed entries
-  const entries = Array.from(streamCache.entries());
-  entries.sort((a, b) => a[1].lastAccessed - b[1].lastAccessed);
-
-  const toEvict = entries.slice(0, entries.length - MAX_CACHE_SIZE);
-  for (const [key, cached] of toEvict) {
-    cached.stream.end();
-    streamCache.delete(key);
+    const toEvict = entries.slice(0, entries.length - MAX_CACHE_SIZE + 1);
+    for (const [key, cached] of toEvict) {
+      cached.stream.end();
+      streamCache.delete(key);
+    }
   }
 }
 

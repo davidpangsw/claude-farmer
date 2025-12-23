@@ -8,12 +8,14 @@
 import { basename } from "path";
 import { develop as developTask } from "../../tasks/develop/index.js";
 import { createIterationLogger, IterationLogger } from "../../logging/index.js";
+import {
+  MIN_SLEEP_MS,
+  formatDuration,
+  nextBackoff,
+  defaultSleep,
+  isRateLimitError,
+} from "../../utils/index.js";
 import type { AIModel, DevelopResult } from "../../types.js";
-
-/** Minimum sleep duration: 1 minute */
-const MIN_SLEEP_MS = 60 * 1000;
-/** Maximum sleep duration: 2 hours */
-const MAX_SLEEP_MS = 2 * 60 * 60 * 1000;
 
 export interface DevelopOptions {
   /** Run once instead of looping (default: true) */
@@ -28,13 +30,6 @@ export interface DevelopCommandResult {
   workingDirName: string;
   iterations: number;
   lastResult: DevelopResult;
-}
-
-/**
- * Default sleep function using setTimeout.
- */
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -91,14 +86,11 @@ export async function develop(
         } else if (!once) {
           // No changes and looping - apply backoff
           logger.log("No changes made");
-          const display = sleepMs >= 60000
-            ? `${Math.round(sleepMs / 60000)} minute(s)`
-            : `${Math.round(sleepMs / 1000)} second(s)`;
-          logger.log(`Sleeping for ${display} before retry...`);
+          logger.log(`Sleeping for ${formatDuration(sleepMs)} before retry...`);
           logger.finalize();
           currentLogger = null;
           await sleep(sleepMs);
-          sleepMs = Math.min(sleepMs * 2, MAX_SLEEP_MS);
+          sleepMs = nextBackoff(sleepMs);
           continue;
         }
 
@@ -109,19 +101,13 @@ export async function develop(
         logger.error(err.message);
 
         // Handle rate limits with exponential backoff
-        if (
-          err.message.includes("Spending cap reached") ||
-          err.message.includes("You've hit your limit")
-        ) {
+        if (isRateLimitError(err.message)) {
           logger.log("Spending cap reached");
-          const display = sleepMs >= 60000
-            ? `${Math.round(sleepMs / 60000)} minute(s)`
-            : `${Math.round(sleepMs / 1000)} second(s)`;
-          logger.log(`Sleeping for ${display} before retry...`);
+          logger.log(`Sleeping for ${formatDuration(sleepMs)} before retry...`);
           logger.finalize();
           currentLogger = null;
           await sleep(sleepMs);
-          sleepMs = Math.min(sleepMs * 2, MAX_SLEEP_MS);
+          sleepMs = nextBackoff(sleepMs);
           continue;
         } else {
           logger.finalize();

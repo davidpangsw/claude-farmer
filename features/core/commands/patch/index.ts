@@ -14,12 +14,14 @@ import { basename } from "path";
 import { review } from "../../tasks/review/index.js";
 import { develop } from "../../tasks/develop/index.js";
 import { createIterationLogger, IterationLogger } from "../../logging/index.js";
+import {
+  MIN_SLEEP_MS,
+  formatDuration,
+  nextBackoff,
+  defaultSleep,
+  isRateLimitError,
+} from "../../utils/index.js";
 import type { AIModel } from "../../types.js";
-
-/** Minimum sleep duration: 1 minute */
-const MIN_SLEEP_MS = 60 * 1000;
-/** Maximum sleep duration: 2 hours */
-const MAX_SLEEP_MS = 2 * 60 * 60 * 1000;
 
 export interface PatchOptions {
   /** Run once instead of looping */
@@ -33,13 +35,6 @@ export interface PatchOptions {
 export interface PatchResult {
   workingDirName: string;
   iterations: number;
-}
-
-/**
- * Default sleep function using setTimeout.
- */
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -131,14 +126,11 @@ export async function patch(
           logger.log("No changes to commit");
 
           // Exponential backoff: sleep and retry
-          const display = sleepMs >= 60000
-            ? `${Math.round(sleepMs / 60000)} minute(s)`
-            : `${Math.round(sleepMs / 1000)} second(s)`;
-          logger.log(`Sleeping for ${display} before retry...`);
+          logger.log(`Sleeping for ${formatDuration(sleepMs)} before retry...`);
           logger.finalize();
           currentLogger = null;
           await sleep(sleepMs);
-          sleepMs = Math.min(sleepMs * 2, MAX_SLEEP_MS);
+          sleepMs = nextBackoff(sleepMs);
           continue;
         }
 
@@ -147,18 +139,15 @@ export async function patch(
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
         logger.error(err.message);
-        if (err.message.indexOf("Spending cap reached") !== -1 || err.message.indexOf("You've hit your limit") !== -1) {
+        if (isRateLimitError(err.message)) {
           logger.log("Spending cap reached");
 
           // Exponential backoff: sleep and retry
-          const display = sleepMs >= 60000
-            ? `${Math.round(sleepMs / 60000)} minute(s)`
-            : `${Math.round(sleepMs / 1000)} second(s)`;
-          logger.log(`Sleeping for ${display} before retry...`);
+          logger.log(`Sleeping for ${formatDuration(sleepMs)} before retry...`);
           logger.finalize();
           currentLogger = null;
           await sleep(sleepMs);
-          sleepMs = Math.min(sleepMs * 2, MAX_SLEEP_MS);
+          sleepMs = nextBackoff(sleepMs);
           continue;
         } else {
           logger.finalize();
