@@ -70,3 +70,4 @@ All AI output must be:
 ## Logging
 - Each iteration should be logged in `claude-farmer/logs/YYYYMMDD_HHmmss.log`
   - Only keep last 100 iterations' log
+- Be careful. Do not buffer and delay the logging. We don't want the log only appears after the whole process is done.

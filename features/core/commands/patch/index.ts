@@ -13,6 +13,7 @@ import { execSync } from "child_process";
 import { join, basename } from "path";
 import { review } from "../../tasks/review/index.js";
 import { develop } from "../../tasks/develop/index.js";
+import { createIterationLogger } from "../../logging/index.js";
 import type { FileSystem, AIModel } from "../../types.js";
 
 export interface PatchOptions {
@@ -55,21 +56,39 @@ export async function patch(
   const scriptsDir = options.scriptsDir ?? join(import.meta.dirname, "../../scripts");
 
   do {
-    // Prepare for patch iteration
-    executeScript(join(scriptsDir, "git-patch-checkout.sh"), workingDirPath);
-
-    // Run review first, then develop based on review feedback
-    await review(workingDirPath, fs, ai);
-    const developResult = await develop(workingDirPath, fs, ai);
-
-    // Commit changes
-    executeScript(join(scriptsDir, "git-patch-complete.sh"), workingDirPath);
-
     iterations++;
+    const logger = createIterationLogger(workingDirPath, fs, iterations);
 
-    // Stop if no edits were made (nothing more to do)
-    if (developResult.edits.length === 0) {
-      break;
+    try {
+      // Prepare for patch iteration
+      executeScript(join(scriptsDir, "git-patch-checkout.sh"), workingDirPath);
+
+      // Run review first, then develop based on review feedback
+      const reviewResult = await review(workingDirPath, fs, ai);
+      logger.logReview(reviewResult.reviewPath, reviewResult.content.length);
+
+      const developResult = await develop(workingDirPath, fs, ai);
+      logger.logDevelop(developResult.edits);
+
+      // Commit changes
+      if (developResult.edits.length > 0) {
+        executeScript(join(scriptsDir, "git-patch-complete.sh"), workingDirPath);
+        logger.logCommit(`Applied ${developResult.edits.length} edit(s)`);
+      } else {
+        logger.logNoChanges();
+      }
+
+      await logger.finalize();
+
+      // Stop if no edits were made (nothing more to do)
+      if (developResult.edits.length === 0) {
+        break;
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.logError(errorMessage);
+      await logger.finalize();
+      throw error;
     }
   } while (!options.once);
 

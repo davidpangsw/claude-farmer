@@ -42,12 +42,24 @@ export class MockFileSystem implements FileSystem {
     for (const path of this.files.keys()) {
       // Check if file is within directory (handle both with and without trailing slash)
       if (path.startsWith(normalizedDir) || path.startsWith(directory + "/")) {
-        if (!pattern || pattern === "**/*.ts") {
+        if (!pattern) {
+          results.push(path);
+        } else if (pattern === "**/*.ts") {
           if (path.endsWith(".ts")) {
             results.push(path);
           }
+        } else if (pattern === "*.log") {
+          if (path.endsWith(".log")) {
+            results.push(path);
+          }
         } else {
-          results.push(path);
+          // Generic extension matching for patterns like "*.ext"
+          const extMatch = pattern.match(/^\*\.(\w+)$/);
+          if (extMatch && path.endsWith(`.${extMatch[1]}`)) {
+            results.push(path);
+          } else {
+            results.push(path);
+          }
         }
       }
     }
