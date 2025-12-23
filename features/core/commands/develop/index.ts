@@ -10,10 +10,9 @@ import { develop as developTask } from "../../tasks/develop/index.js";
 import { createIterationLogger, IterationLogger } from "../../logging/index.js";
 import {
   MIN_SLEEP_MS,
-  formatDuration,
-  nextBackoff,
   defaultSleep,
   isRateLimitError,
+  performBackoffSleep,
 } from "../../utils/index.js";
 import type { AIModel, DevelopResult } from "../../types.js";
 
@@ -47,14 +46,20 @@ export async function develop(
   const sleep = options._sleepFn ?? defaultSleep;
   let lastResult: DevelopResult = { workingDirName: basename(workingDirPath), edits: [] };
   let currentLogger: IterationLogger | null = null;
+  let shuttingDown = false;
 
-  // Graceful shutdown handler
+  // Graceful shutdown handler with flag-based approach
   const shutdownHandler = () => {
+    if (shuttingDown) {
+      // Second signal - force exit
+      process.exit(1);
+    }
+    shuttingDown = true;
     if (currentLogger) {
       currentLogger.error("Received shutdown signal");
       currentLogger.finalize();
+      currentLogger = null;
     }
-    process.exit(0);
   };
 
   process.on("SIGINT", shutdownHandler);
@@ -62,6 +67,8 @@ export async function develop(
 
   try {
     do {
+      if (shuttingDown) break;
+
       iterations++;
       const logger = createIterationLogger(workingDirPath, iterations);
       currentLogger = logger;
@@ -83,31 +90,25 @@ export async function develop(
         if (lastResult.edits.length > 0) {
           // Reset backoff on successful edits
           sleepMs = MIN_SLEEP_MS;
-        } else if (!once) {
-          // No changes and looping - apply backoff
-          logger.log("No changes made");
-          logger.log(`Sleeping for ${formatDuration(sleepMs)} before retry...`);
           logger.finalize();
           currentLogger = null;
-          await sleep(sleepMs);
-          sleepMs = nextBackoff(sleepMs);
+        } else if (!once) {
+          // No changes and looping - apply backoff
+          sleepMs = await performBackoffSleep(logger, sleepMs, "No changes made", sleep);
+          currentLogger = null;
           continue;
+        } else {
+          logger.finalize();
+          currentLogger = null;
         }
-
-        logger.finalize();
-        currentLogger = null;
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
         logger.error(err.message);
 
         // Handle rate limits with exponential backoff
         if (isRateLimitError(err.message)) {
-          logger.log("Spending cap reached");
-          logger.log(`Sleeping for ${formatDuration(sleepMs)} before retry...`);
-          logger.finalize();
+          sleepMs = await performBackoffSleep(logger, sleepMs, "Spending cap reached", sleep);
           currentLogger = null;
-          await sleep(sleepMs);
-          sleepMs = nextBackoff(sleepMs);
           continue;
         } else {
           logger.finalize();
@@ -115,7 +116,7 @@ export async function develop(
           throw error;
         }
       }
-    } while (!once);
+    } while (!once && !shuttingDown);
   } finally {
     // Clean up signal handlers
     process.off("SIGINT", shutdownHandler);

@@ -10,4 +10,6 @@ export {
   nextBackoff,
   defaultSleep,
   isRateLimitError,
+  performBackoffSleep,
 } from "./backoff.js";
+export type { BackoffLogger } from "./backoff.js";

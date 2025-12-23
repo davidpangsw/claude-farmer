@@ -1,50 +1,46 @@
-I don't have write permission. Here's the updated **REVIEW.md**:
+I don't have write permission to the file. Here's the updated **REVIEW.md**:
 
 ---
 
 # Review
 
 ## Summary
-Well-implemented module with all GOAL.md requirements met; minor improvements remain for edge cases and code maintainability.
+Well-structured module meeting all GOAL.md requirements; previous LRU bug fixed, minor improvements remain.
 
 ## Goal Alignment
-- [x] Review task produces REVIEW.md with proper format
+- [x] Review task produces REVIEW.md with correct format
 - [x] Develop task produces code edits and DEVELOP.json
-- [x] patch() orchestrates review → develop → commit with looping
-- [x] develop() runs develop task with default once=true
+- [x] patch() orchestrates review → develop → commit with looping (default: forever)
+- [x] develop() runs develop task (default: once=true)
 - [x] Exponential backoff (1 min → 2 hours) for no-changes and rate limits
-- [x] Never terminates automatically (loops forever by default)
-- [x] Logging with OS timestamps, real-time streaming (sync: true), 30-file rotation
-- [x] Uses logging library (pino) and rotation library (rotating-file-stream)
-- [x] Path traversal protection with warnings logged
+- [x] Never terminates automatically
+- [x] Logging: OS timestamps, sync streaming, 30-file rotation via pino + rotating-file-stream
+- [x] Path traversal protection with warnings
 - [x] Helpers in utils/ subdirectory
-- [x] ultrathink defaults to false as specified
-- [x] Stream cache with LRU eviction and close event cleanup
+- [x] ultrathink defaults to false
+- [x] Tasks not exposed outside module
+- [x] Stream cache with LRU eviction (fixed) and close event cleanup
 - [x] `.git/**` excluded in IGNORE_PATTERNS
 - [x] Git operations use spawnSync with error checking
 - [x] Graceful shutdown handlers for SIGINT/SIGTERM
-- [x] Rate limit tests exist
 
 ## Bugs
 
-### Medium Priority
-1. **logging/index.ts:42**: `evictLRU()` checks `size <= MAX_CACHE_SIZE` but is called before insertion, allowing cache to temporarily grow to MAX_CACHE_SIZE + 1. Should check `size >= MAX_CACHE_SIZE`.
+None found. Previous LRU eviction bug (`size <= MAX_CACHE_SIZE`) has been fixed—current code at `logging/index.ts:41` correctly uses `size >= MAX_CACHE_SIZE`.
 
 ## Clarifications Needed
-1. **Web search in review**: GOAL.md states "Researches best practices via web search" but Claude Code headless mode depends on user's CLI configuration. Should the module verify web search availability or document this as a prerequisite?
+1. **Web search availability**: GOAL.md states "Researches best practices via web search" but Claude Code headless mode depends on user CLI configuration. Should the module document this as a prerequisite, or assume it's available?
 
 ## Suggested Improvements
 
 ### Medium Priority
-1. **commands/patch/index.ts + commands/develop/index.ts**: Duplicated backoff sleep logic (lines 133-142 and 153-162 in patch, similar in develop). Extract into a shared helper function in `utils/` to reduce duplication.
-
-2. **Shutdown handler behavior**: The `process.exit(0)` in shutdown handlers (patch/index.ts:64, develop/index.ts:62) prevents the finally block from executing. While harmless since the process is exiting, consider using a flag-based approach for cleaner shutdown if these functions are used as library code.
+1. **Backoff code duplication** (`commands/patch/index.ts` and `commands/develop/index.ts`): The "log, finalize, sleep, update backoff, continue" pattern is repeated 4 times. Consider extracting to `utils/backoff.ts`.
 
 ### Low Priority
-1. **tests/rate-limit.test.ts**: Good coverage, but could add a test verifying the backoff resets independently for rate limits vs no-changes scenarios.
+1. **Shutdown handler behavior**: `process.exit(0)` in shutdown handlers prevents the finally block from executing. Consider a flag-based approach if library usage requires cleanup.
 
-2. **claude/prompts/develop.ts**: The instruction "do not generate other text" conflicts with asking AI to "Generate a JSON array of file edits". Consider rewording to "Output only the JSON array".
+2. **DEVELOP_PROMPT wording** (`claude/prompts/develop.ts`): Rephrase "do not generate other text" to "Output only the JSON array, no explanatory text" for clarity.
 
 ## Next Steps
-1. Fix LRU eviction boundary check in logging/index.ts:42 (`size <= MAX_CACHE_SIZE` → `size >= MAX_CACHE_SIZE`)
-2. Extract backoff sleep logic into utils/backoff.ts
+1. Decide on web search availability handling (clarification needed)
+2. Optional: Extract backoff sleep helper to reduce duplication

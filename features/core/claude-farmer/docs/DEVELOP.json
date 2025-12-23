@@ -1,11 +1,9 @@
 {
   "changes": [
-    {"file": "logging/index.ts", "description": "Fixed LRU eviction boundary check"},
-    {"file": "utils/backoff.ts", "description": "New shared backoff utility module"},
-    {"file": "utils/index.ts", "description": "Added backoff exports"},
-    {"file": "commands/patch/index.ts", "description": "Refactored to use shared backoff utilities"},
-    {"file": "commands/develop/index.ts", "description": "Refactored to use shared backoff utilities"},
-    {"file": "claude/prompts/develop.ts", "description": "Clarified output instruction wording"}
+    {"file": "utils/backoff.ts", "description": "Added performBackoffSleep helper function"},
+    {"file": "utils/index.ts", "description": "Exported new performBackoffSleep function"},
+    {"file": "commands/patch/index.ts", "description": "Use backoff helper, flag-based shutdown"},
+    {"file": "commands/develop/index.ts", "description": "Use backoff helper, flag-based shutdown"}
   ],
   "problems": []
 }

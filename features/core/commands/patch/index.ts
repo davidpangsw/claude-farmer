@@ -16,10 +16,9 @@ import { develop } from "../../tasks/develop/index.js";
 import { createIterationLogger, IterationLogger } from "../../logging/index.js";
 import {
   MIN_SLEEP_MS,
-  formatDuration,
-  nextBackoff,
   defaultSleep,
   isRateLimitError,
+  performBackoffSleep,
 } from "../../utils/index.js";
 import type { AIModel } from "../../types.js";
 
@@ -49,14 +48,20 @@ export async function patch(
   let sleepMs = MIN_SLEEP_MS;
   const sleep = options._sleepFn ?? defaultSleep;
   let currentLogger: IterationLogger | null = null;
+  let shuttingDown = false;
 
-  // Graceful shutdown handler
+  // Graceful shutdown handler with flag-based approach
   const shutdownHandler = () => {
+    if (shuttingDown) {
+      // Second signal - force exit
+      process.exit(1);
+    }
+    shuttingDown = true;
     if (currentLogger) {
       currentLogger.error("Received shutdown signal");
       currentLogger.finalize();
+      currentLogger = null;
     }
-    process.exit(0);
   };
 
   process.on("SIGINT", shutdownHandler);
@@ -64,6 +69,8 @@ export async function patch(
 
   try {
     do {
+      if (shuttingDown) break;
+
       iterations++;
       const logger = createIterationLogger(workingDirPath, iterations);
       currentLogger = logger;
@@ -72,6 +79,8 @@ export async function patch(
         // Run review first, then develop based on review feedback
         const reviewResult = await review(workingDirPath, ai);
         logger.log(`Review completed: ${reviewResult.reviewPath} (${reviewResult.content.length} chars)`);
+
+        if (shuttingDown) break;
 
         const developResult = await develop(workingDirPath, ai);
         logger.log(`Develop completed: ${developResult.edits.length} file(s) edited`);
@@ -122,32 +131,20 @@ export async function patch(
 
           // Reset backoff on successful edits
           sleepMs = MIN_SLEEP_MS;
-        } else {
-          logger.log("No changes to commit");
-
-          // Exponential backoff: sleep and retry
-          logger.log(`Sleeping for ${formatDuration(sleepMs)} before retry...`);
           logger.finalize();
           currentLogger = null;
-          await sleep(sleepMs);
-          sleepMs = nextBackoff(sleepMs);
+        } else {
+          // No changes - apply backoff
+          sleepMs = await performBackoffSleep(logger, sleepMs, "No changes to commit", sleep);
+          currentLogger = null;
           continue;
         }
-
-        logger.finalize();
-        currentLogger = null;
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
         logger.error(err.message);
         if (isRateLimitError(err.message)) {
-          logger.log("Spending cap reached");
-
-          // Exponential backoff: sleep and retry
-          logger.log(`Sleeping for ${formatDuration(sleepMs)} before retry...`);
-          logger.finalize();
+          sleepMs = await performBackoffSleep(logger, sleepMs, "Spending cap reached", sleep);
           currentLogger = null;
-          await sleep(sleepMs);
-          sleepMs = nextBackoff(sleepMs);
           continue;
         } else {
           logger.finalize();
@@ -155,7 +152,7 @@ export async function patch(
           throw error;
         }
       }
-    } while (!options.once);
+    } while (!options.once && !shuttingDown);
   } finally {
     // Clean up signal handlers
     process.off("SIGINT", shutdownHandler);
