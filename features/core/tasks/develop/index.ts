@@ -11,7 +11,7 @@ import type {
   AIModel,
 } from "../../types.js";
 import { gatherWorkingDirContext } from "../../context.js";
-import { dirname, basename, resolve, relative } from "path";
+import { dirname, basename, resolve, sep } from "path";
 
 /**
  * Validates that a file path is within the working directory.
@@ -29,8 +29,9 @@ function isPathWithinWorkingDir(filePath: string, workingDirPath: string): boole
   // Check if the resolved path starts with the working directory
   // Add trailing separator to prevent matching partial directory names
   // e.g., /project-evil should not match /project
+  // Use path.sep for cross-platform compatibility (Windows uses \, Unix uses /)
   return resolvedPath === resolvedWorkingDir ||
-    resolvedPath.startsWith(resolvedWorkingDir + "/");
+    resolvedPath.startsWith(resolvedWorkingDir + sep);
 }
 
 /**
