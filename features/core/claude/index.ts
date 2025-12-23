@@ -14,7 +14,7 @@ export type { ClaudeCodeOptions, ClaudeCodeResult } from "./types.js";
 // Embedded prompts (no need for external files)
 const REVIEW_PROMPT = `# Review Prompt
 
-Review a working directory and provide improvement suggestions. Research best practices via web search before generating suggestions.
+Review criticially a working directory and provide improvement suggestions. Research best practices via web search before generating suggestions.
 
 ## Context Provided
 
