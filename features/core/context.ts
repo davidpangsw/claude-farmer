@@ -26,6 +26,7 @@ const IGNORE_PATTERNS = [
   "**/node_modules/**",
   "**/package-lock.json",
   "**/*.lock",
+  ".git/**",
 ];
 
 /**

@@ -52,6 +52,11 @@ function getOrCreateStream(logsDir: string, iteration: number): rfs.RotatingFile
       maxFiles: MAX_LOG_FILES,
     });
 
+    // Clean up cache when stream closes to prevent memory leak
+    stream.on("close", () => {
+      streamCache.delete(logsDir);
+    });
+
     cached = { stream, iterationCount: iteration };
     streamCache.set(logsDir, cached);
   } else if (iteration > cached.iterationCount) {

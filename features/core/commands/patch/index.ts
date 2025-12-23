@@ -69,6 +69,13 @@ export async function patch(
         logger.log(`  - ${edit.path} (${edit.content.length} chars)`);
       }
 
+      // Log security warnings if any
+      if (developResult.warnings && developResult.warnings.length > 0) {
+        for (const warning of developResult.warnings) {
+          logger.error(`[SECURITY] ${warning}`);
+        }
+      }
+
       // Commit changes or handle no-edits case
       if (developResult.edits.length > 0) {
         // Build meaningful commit message

@@ -2,12 +2,17 @@
 
 ## Changes Made
 
-1. **context.ts**: Added file exclusions (`node_modules`, `package-lock.json`, `*.lock`) and 100KB file size limit to prevent token bloat
-2. **commands/patch/index.ts**: Replaced shell string git commit with spawn using args array for safer commit message handling
-3. **tests/context.test.ts**: Added unit tests for context gathering, file exclusions, and size limits
-4. **tests/logging.test.ts**: Added unit tests for iteration logger
-5. **tests/tasks-review.test.ts**: Added unit tests for review task
-6. **tests/tasks-develop.test.ts**: Added unit tests for develop task with path traversal protection
+1. **logging/index.ts** - Added stream cleanup callback to remove streams from cache when closed, preventing memory leak when patch() is called on different working directories
+
+2. **context.ts** - Added `.git/**` to IGNORE_PATTERNS to skip git internal files that could match source patterns and waste context tokens
+
+3. **tasks/develop/index.ts** - Changed path traversal warnings from console.warn to returning them in the DevelopResult, so security events appear in iteration log files
+
+4. **types.ts** - Added optional `warnings` field to DevelopResult interface
+
+5. **commands/patch/index.ts** - Updated to log path traversal warnings from develop task
+
+6. **commands/develop/index.ts** - Updated to log path traversal warnings from develop task
 
 ## Problems Encountered
 

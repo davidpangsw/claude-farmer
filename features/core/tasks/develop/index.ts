@@ -26,12 +26,13 @@ export async function develop(
 
   // Filter and apply edits
   const safeEdits: FileEdit[] = [];
+  const warnings: string[] = [];
   let hasDevelopJson = false;
 
   for (const edit of edits) {
     // Validate path is within working directory
     if (!isPathWithinWorkingDir(edit.path, workingDirPath)) {
-      console.warn(`[develop] Path traversal blocked: ${edit.path} is outside working directory`);
+      warnings.push(`Path traversal blocked: ${edit.path} is outside working directory`);
       continue;
     }
 
@@ -71,5 +72,6 @@ export async function develop(
   return {
     workingDirName: basename(workingDirPath),
     edits: safeEdits,
+    warnings: warnings.length > 0 ? warnings : undefined,
   };
 }

@@ -59,7 +59,7 @@ describe("develop task", () => {
     expect(content).toContain("Hello");
   });
 
-  it("blocks path traversal attempts", async () => {
+  it("blocks path traversal attempts and returns warnings", async () => {
     const mockEdits: FileEdit[] = [
       { path: "../../../etc/passwd", content: "malicious content" },
       { path: "valid.ts", content: "valid content" },
@@ -77,6 +77,12 @@ describe("develop task", () => {
 
     const validEdit = result.edits.find(e => e.path.endsWith("valid.ts"));
     expect(validEdit).toBeDefined();
+
+    // Should have a warning about the blocked path
+    expect(result.warnings).toBeDefined();
+    expect(result.warnings?.length).toBe(1);
+    expect(result.warnings?.[0]).toContain("Path traversal blocked");
+    expect(result.warnings?.[0]).toContain("passwd");
   });
 
   it("generates fallback DEVELOP.json when AI does not include it", async () => {
@@ -109,5 +115,6 @@ describe("develop task", () => {
 
     expect(result.edits).toHaveLength(0);
     expect(result.workingDirName).toBe(basename(tempDir));
+    expect(result.warnings).toBeUndefined();
   });
 });

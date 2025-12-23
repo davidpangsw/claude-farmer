@@ -22,7 +22,6 @@ Review critically a working directory and provide improvement suggestions. Resea
    - **Code Quality**: Issues to address? Is it over-engineered?
    - **Missing Features**: What's incomplete?
    - **Testing**: Adequate coverage?
-4. Generate REVIEW.md.
 
 ## Output Guidelines
 

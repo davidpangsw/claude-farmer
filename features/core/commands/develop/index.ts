@@ -63,6 +63,13 @@ export async function develop(
         logger.log(`  - ${edit.path} (${edit.content.length} chars)`);
       }
 
+      // Log security warnings if any
+      if (lastResult.warnings && lastResult.warnings.length > 0) {
+        for (const warning of lastResult.warnings) {
+          logger.error(`[SECURITY] ${warning}`);
+        }
+      }
+
       if (lastResult.edits.length > 0) {
         // Reset backoff on successful edits
         sleepMs = MIN_SLEEP_MS;
