@@ -33,7 +33,7 @@ Each task reads context and produces output. Tasks are defined with a `PROMPT.md
 - **Review**: Researches best practices via web search, then generates improvement suggestions
 - **Develop**: Implements GOAL requirements, addresses REVIEW feedback
 
-Tasks are not exposed outside of the feature.
+Tasks are not exposed outside of the feature. Do not expose any tasks nor its arguments or returns.
 
 ## Command
 
@@ -52,7 +52,10 @@ Workflow:
 3. Commit with meaningful message
 
 Default: Loop forever for iterative improvement until user stops it.
-- If no more improvement could be found, never terminate itself. Sleep for 1 minute, 2 minute, 4 minute, 8 minutes ..., (maxed at 24 hour.)
+
+- **Do not stop if  No more changes needed.**
+   - If no more improvement could be found, never terminate itself. Sleep for 1 minute, 2 minute, 4 minute, 8 minutes ..., (maxed at 24 hour.)
+- Again,  **Do not stop if  No more changes needed.**
 
 ## AI Integration
 
