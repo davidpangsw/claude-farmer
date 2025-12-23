@@ -1,10 +1,10 @@
-Now let me write the updated review based on my analysis:
+Now I have the complete picture. Here's my review:
 
 ```markdown
 # Review
 
 ## Summary
-Core functionality complete; previous high-priority issues resolved. Remaining issues are async logging safety and missing ultrathink user configuration.
+Previous high-priority issues resolved; one critical wiring bug remains with ultrathink option not being passed through.
 
 ## Goal Alignment
 - [x] Review task: reads GOAL, source → produces REVIEW.md
@@ -12,42 +12,41 @@ Core functionality complete; previous high-priority issues resolved. Remaining i
 - [x] Patch command: orchestrates review → develop → commit loop
 - [x] Tasks not exposed: only commands exported in index.ts
 - [x] Logging with rotation (100 files max)
-- [x] Real-time logging via appendFile
-- [x] Exponential backoff: 1→2→4→8 min... up to 24h, resets on edits
-- [x] Commit message passed to git script
-- [x] File patterns configurable with sensible defaults
-- [ ] **ultrathink user control**: GOAL says "enabled if user indicates" but PatchOptions has no ultrathink option
+- [x] Real-time logging via appendFile (now properly awaited)
+- [x] Exponential backoff with reset on edits
+- [x] Graceful shutdown handling (SIGINT/SIGTERM)
+- [ ] **ultrathink user control**: Option exists in PatchOptions but is never used
 
 ## Suggestions
 
 ### High Priority
-1. **Add ultrathink option to PatchOptions** (`commands/patch/index.ts`)
-   - GOAL.md: "ultrathink is disabled by default, but could be enabled if user indicates"
-   - Current: ClaudeCodeAI defaults ultrathink to false, but no way to enable via patch()
-   - Fix: Add `ultrathink?: boolean` to PatchOptions, pass to ClaudeCodeAI constructor
+1. **Wire ultrathink option through patch()** (`commands/patch/index.ts`)
+   - `PatchOptions.ultrathink` exists but is dead code
+   - The `ai: AIModel` is passed in pre-configured, so the option is ignored
+   - Fix options:
+     a) Remove `ultrathink` from PatchOptions (breaking change - caller must configure AI)
+     b) Change signature to accept AI factory/options instead of configured AI
+     c) Document that caller must configure ultrathink when creating ClaudeCodeAI
 
-2. **Await logger.log() in executeScript** (`commands/patch/index.ts:70,79,82`)
-   - Current: `void logger.log()` fire-and-forget pattern
-   - Risk: Fast script execution could lose log entries if process moves on before async write
-   - Fix: Return and await the logger calls, or buffer then flush after script completes
+2. **Global mutable `shouldStop` state** (`commands/patch/index.ts:22`)
+   - Module-level `let shouldStop = false;` creates race condition if `patch()` called concurrently
+   - Fix: Move to instance/closure scope within each `patch()` call
 
 ### Medium Priority
-1. **Add graceful shutdown handling** (`commands/patch/index.ts`)
-   - Current: Infinite loop with no signal handling
-   - Risk: SIGTERM/SIGINT leaves loop in undefined state
-   - Fix: Add signal handlers to set a `shouldStop` flag, log graceful shutdown
+1. **Expand git-patch-checkout.sh** (`scripts/git-patch-checkout.sh`)
+   - Currently only verifies git repo exists
+   - Add: warn if uncommitted changes exist (script comments mention stash/fetch but unimplemented)
 
-2. **Expand git-patch-checkout.sh functionality** (`scripts/git-patch-checkout.sh`)
-   - Current: Only checks if git repo exists
-   - Comments suggest: stash changes, fetch remote
-   - Consider: At minimum, warn if there are uncommitted changes
+2. **Add E2E integration test for ClaudeCodeAI**
+   - All tests use MockAIModel
+   - Add one test that spawns actual `claude` CLI (skip if not installed)
 
 ### Low Priority
-1. **Add E2E integration test for ClaudeCodeAI** - All tests use mocks; no verification that actual `claude` CLI spawning works correctly
-2. **Consider config file support** - Allow users to specify file patterns in `claude-farmer/config.json` instead of only programmatically
+1. **Consider removing dead PatchOptions.ultrathink** if option (a) above is chosen
+2. **Add config file support** (`claude-farmer/config.json`) for file patterns
 
 ## Next Steps
-1. Add `ultrathink` option to PatchOptions and wire through to ClaudeCodeAI
-2. Fix async logging in executeScript to await log writes
-3. Add SIGINT/SIGTERM handlers for graceful shutdown
+1. Fix ultrathink wiring - either remove option or make it functional
+2. Make `shouldStop` local to each `patch()` invocation
+3. Add git uncommitted changes warning to checkout script
 ```

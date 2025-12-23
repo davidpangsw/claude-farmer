@@ -27,8 +27,6 @@ const MAX_ERROR_RETRIES = 3;
 export interface PatchOptions {
   once?: boolean;
   scriptsDir?: string;
-  /** Enable ultrathink mode for AI (default: false) */
-  ultrathink?: boolean;
   /** @internal For testing - custom sleep function */
   _sleepFn?: (ms: number) => Promise<void>;
 }
@@ -37,9 +35,6 @@ export interface PatchResult {
   workingDirName: string;
   iterations: number;
 }
-
-/** Flag to signal graceful shutdown */
-let shouldStop = false;
 
 /**
  * Default sleep function using setTimeout.
@@ -118,10 +113,16 @@ function isTransientError(error: Error): boolean {
 /**
  * Sets up signal handlers for graceful shutdown.
  * Returns a cleanup function to remove the handlers.
+ *
+ * @param stopFlag - Object with shouldStop property to set on signal
+ * @param logger - Optional logger for shutdown message
  */
-function setupSignalHandlers(logger?: IterationLogger): () => void {
+function setupSignalHandlers(
+  stopFlag: { shouldStop: boolean },
+  logger?: IterationLogger
+): () => void {
   const handler = async (signal: string) => {
-    shouldStop = true;
+    stopFlag.shouldStop = true;
     if (logger) {
       await logger.log(`Received ${signal}, shutting down gracefully...`);
     }
@@ -144,8 +145,8 @@ function setupSignalHandlers(logger?: IterationLogger): () => void {
  *
  * @param workingDirPath - The path to the working directory
  * @param fs - File system interface
- * @param ai - AI model interface
- * @param options - Patch options including --once flag, ultrathink, and optional scriptsDir
+ * @param ai - AI model interface (configure ultrathink when creating the AI instance)
+ * @param options - Patch options including --once flag and optional scriptsDir
  */
 export async function patch(
   workingDirPath: string,
@@ -158,19 +159,19 @@ export async function patch(
   let consecutiveErrors = 0;
   const sleep = options._sleepFn ?? defaultSleep;
 
-  // Reset stop flag at start
-  shouldStop = false;
+  // Local stop flag for this invocation (avoids race conditions with concurrent calls)
+  const stopFlag = { shouldStop: false };
 
   // Default scripts directory is relative to this module
   const scriptsDir = options.scriptsDir ?? join(import.meta.dirname, "../../scripts");
 
   // Setup signal handlers for graceful shutdown
-  const cleanupSignals = setupSignalHandlers();
+  const cleanupSignals = setupSignalHandlers(stopFlag);
 
   try {
     do {
       // Check for graceful shutdown
-      if (shouldStop) {
+      if (stopFlag.shouldStop) {
         break;
       }
 
@@ -251,7 +252,7 @@ export async function patch(
         // Non-transient error or max retries exceeded - rethrow
         throw error;
       }
-    } while (!options.once && !shouldStop);
+    } while (!options.once && !stopFlag.shouldStop);
   } finally {
     // Cleanup signal handlers
     cleanupSignals();

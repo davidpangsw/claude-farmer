@@ -420,16 +420,28 @@ describe("patch", () => {
     expect(logContent).toContain("Script output: Already up to date.");
   });
 
-  it("accepts ultrathink option", async () => {
-    const fs = new MockFileSystem({
-      "/project/claude-farmer/GOAL.md": "# Goal",
+  it("can run multiple patch calls concurrently without race conditions", async () => {
+    // This test verifies that the local stopFlag doesn't cause race conditions
+    const fs1 = new MockFileSystem({
+      "/project1/claude-farmer/GOAL.md": "# Goal 1",
+    });
+    const fs2 = new MockFileSystem({
+      "/project2/claude-farmer/GOAL.md": "# Goal 2",
     });
 
-    const ai = new MockAIModel("# Review", []);
+    const ai1 = new MockAIModel("# Review 1", [{ path: "/project1/a.ts", content: "a" }]);
+    const ai2 = new MockAIModel("# Review 2", [{ path: "/project2/b.ts", content: "b" }]);
 
-    // Should accept ultrathink option without error
-    const result = await patch("/project", fs, ai, { once: true, ultrathink: true });
+    // Run both patch calls concurrently
+    const [result1, result2] = await Promise.all([
+      patch("/project1", fs1, ai1, { once: true }),
+      patch("/project2", fs2, ai2, { once: true }),
+    ]);
 
-    expect(result.iterations).toBe(1);
+    // Both should complete independently
+    expect(result1.iterations).toBe(1);
+    expect(result2.iterations).toBe(1);
+    expect(result1.workingDirName).toBe("project1");
+    expect(result2.workingDirName).toBe("project2");
   });
 });
