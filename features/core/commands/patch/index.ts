@@ -196,7 +196,15 @@ export async function patch(
         const reviewResult = await review(workingDirPath, fs, ai);
         await logger.logReview(reviewResult.reviewPath, reviewResult.content.length);
 
-        const developResult = await develop(workingDirPath, fs, ai, { dryRun: options.dryRun });
+        // Create callback to log rejected paths
+        const onPathRejected = async (path: string, reason: string) => {
+          await logger.log(`SECURITY: ${reason}`);
+        };
+
+        const developResult = await develop(workingDirPath, fs, ai, {
+          dryRun: options.dryRun,
+          onPathRejected,
+        });
         await logger.logDevelop(developResult.edits);
 
         if (options.dryRun) {

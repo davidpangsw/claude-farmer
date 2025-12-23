@@ -1,0 +1,32 @@
+{
+  "name": "claude-farmer",
+  "version": "0.1.0",
+  "description": "Tools to generate and improve code within any working directory",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "claude-farmer": "./cli.js"
+  },
+  "scripts": {
+    "test": "vitest",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "ai",
+    "code-generation",
+    "claude"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "glob": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  }
+}

@@ -1,32 +1,21 @@
 #!/bin/bash
-# git-patch-complete.sh
-#
-# Completes a patch iteration by committing changes.
+# Completes a patch iteration by staging and committing changes.
 # Usage: git-patch-complete.sh "commit message"
 
 set -e
 
-COMMIT_MSG="${1:-claude-farmer: automated update}"
+COMMIT_MESSAGE="${1:-claude-farmer: automated update}"
 
-# Check if there are any changes to commit
-if git diff --quiet HEAD 2>/dev/null && git diff --cached --quiet 2>/dev/null; then
-    # Check for untracked files
-    if [ -z "$(git ls-files --others --exclude-standard)" ]; then
-        echo "No changes to commit."
-        exit 0
-    fi
-fi
-
-# Stage all changes (including new files, excluding .gitignore patterns)
+# Stage all changes
 git add -A
 
-# Check again if there's anything staged
-if git diff --cached --quiet 2>/dev/null; then
-    echo "No changes staged for commit."
-    exit 0
+# Check if there are changes to commit
+if git diff --cached --quiet; then
+  echo "No changes to commit"
+  exit 0
 fi
 
 # Commit with the provided message
-git commit -m "$COMMIT_MSG"
+git commit -m "$COMMIT_MESSAGE"
 
-echo "Changes committed successfully."
+echo "Committed: $COMMIT_MESSAGE"

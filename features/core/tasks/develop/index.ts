@@ -35,6 +35,16 @@ function isPathWithinWorkingDir(filePath: string, workingDirPath: string): boole
 }
 
 /**
+ * Options for the develop task.
+ */
+export interface DevelopOptions {
+  /** Dry run - return edits without writing files */
+  dryRun?: boolean;
+  /** Logger function for reporting rejected paths */
+  onPathRejected?: (path: string, reason: string) => void;
+}
+
+/**
  * Develops a working directory by generating and applying code edits.
  *
  * @param workingDirPath - The path to the working directory
@@ -47,7 +57,7 @@ export async function develop(
   workingDirPath: string,
   fs: FileSystem,
   ai: AIModel,
-  options: { dryRun?: boolean } = {}
+  options: DevelopOptions = {}
 ): Promise<DevelopResult> {
   // Gather context (including review if it exists)
   const context = await gatherWorkingDirContext(workingDirPath, fs);
@@ -60,8 +70,14 @@ export async function develop(
   for (const edit of edits) {
     // Validate path is within working directory
     if (!isPathWithinWorkingDir(edit.path, workingDirPath)) {
-      // Skip edits that would write outside working directory
-      // This is a security measure against path traversal
+      // Log rejected path for security transparency
+      const reason = `Path traversal blocked: ${edit.path} is outside working directory ${workingDirPath}`;
+      if (options.onPathRejected) {
+        options.onPathRejected(edit.path, reason);
+      } else {
+        // Default to console.warn if no callback provided
+        console.warn(`[develop] ${reason}`);
+      }
       continue;
     }
 

@@ -2,7 +2,7 @@
  * Tests for the develop task.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { develop } from "../tasks/develop/index.js";
 import { MockFileSystem, MockAIModel } from "./mocks.js";
 import type { FileEdit } from "../types.js";
@@ -95,7 +95,7 @@ describe("develop", () => {
     expect(fs.getFile("/project/features/myfeature/utils/helpers/format.ts")).toBeDefined();
   });
 
-  it("rejects paths outside working directory (path traversal)", async () => {
+  it("rejects paths outside working directory (path traversal) and logs rejection", async () => {
     const fs = new MockFileSystem({
       "/project/features/myfeature/claude-farmer/GOAL.md": "# Goal",
     });
@@ -115,7 +115,13 @@ describe("develop", () => {
 
     const ai = new MockAIModel("", edits);
 
-    const result = await develop("/project/features/myfeature", fs, ai);
+    // Track rejected paths
+    const rejectedPaths: string[] = [];
+    const onPathRejected = (path: string, reason: string) => {
+      rejectedPaths.push(path);
+    };
+
+    const result = await develop("/project/features/myfeature", fs, ai, { onPathRejected });
 
     // Only the valid edit should be applied
     expect(result.edits).toHaveLength(1);
@@ -123,6 +129,9 @@ describe("develop", () => {
 
     // Malicious path should not have been written
     expect(fs.getFile("/etc/passwd")).toBeUndefined();
+
+    // Rejected path should have been logged
+    expect(rejectedPaths).toContain("/project/features/myfeature/../../../etc/passwd");
   });
 
   it("rejects absolute paths outside working directory", async () => {
@@ -143,10 +152,16 @@ describe("develop", () => {
 
     const ai = new MockAIModel("", edits);
 
-    const result = await develop("/project", fs, ai);
+    const rejectedPaths: string[] = [];
+    const result = await develop("/project", fs, ai, {
+      onPathRejected: (path) => rejectedPaths.push(path),
+    });
 
     // No edits should be applied
     expect(result.edits).toHaveLength(0);
+
+    // Both paths should have been rejected
+    expect(rejectedPaths).toHaveLength(2);
   });
 
   it("accepts relative paths within working directory", async () => {
@@ -190,5 +205,32 @@ describe("develop", () => {
 
     // But file should NOT be written
     expect(fs.getFile("/project/index.ts")).toBeUndefined();
+  });
+
+  it("logs to console.warn when no onPathRejected callback provided", async () => {
+    const fs = new MockFileSystem({
+      "/project/claude-farmer/GOAL.md": "# Goal",
+    });
+
+    const edits: FileEdit[] = [
+      {
+        path: "/tmp/evil.ts",
+        content: "malicious",
+      },
+    ];
+
+    const ai = new MockAIModel("", edits);
+
+    // Mock console.warn
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await develop("/project", fs, ai);
+
+    // console.warn should have been called
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Path traversal blocked")
+    );
+
+    warnSpy.mockRestore();
   });
 });

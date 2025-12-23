@@ -8,12 +8,19 @@
  *   --once         Run once instead of looping
  *   --ultrathink   Enable extended thinking mode
  *   --dry-run      Show proposed changes without writing files or committing
+ *   --version      Show version number
  */
 
 import { patch } from "./commands/patch/index.js";
 import { ClaudeCodeAI } from "./claude/index.js";
 import { NodeFileSystem } from "./fs.js";
 import { resolve } from "path";
+import { readFileSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 interface CliOptions {
   workingDir: string;
@@ -23,9 +30,22 @@ interface CliOptions {
 }
 
 /**
+ * Get package version from package.json.
+ */
+function getVersion(): string {
+  try {
+    const packagePath = join(__dirname, "package.json");
+    const packageJson = JSON.parse(readFileSync(packagePath, "utf-8"));
+    return packageJson.version || "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
+/**
  * Parse command line arguments.
  */
-function parseArgs(args: string[]): CliOptions {
+function parseArgs(args: string[]): CliOptions | null {
   const options: CliOptions = {
     workingDir: process.cwd(),
     once: false,
@@ -45,6 +65,9 @@ function parseArgs(args: string[]): CliOptions {
       options.dryRun = true;
     } else if (arg === "--help" || arg === "-h") {
       printUsage();
+      process.exit(0);
+    } else if (arg === "--version" || arg === "-v") {
+      console.log(`claude-farmer v${getVersion()}`);
       process.exit(0);
     } else if (!arg.startsWith("--") && !arg.startsWith("-")) {
       // Positional argument: working directory
@@ -77,6 +100,7 @@ Options:
   --once         Run once instead of looping (default: loop forever)
   --ultrathink   Enable extended thinking mode for AI
   --dry-run      Show proposed changes without writing files or committing
+  --version, -v  Show version number
   --help, -h     Show this help message
 
 Examples:
@@ -94,6 +118,12 @@ async function main(): Promise<void> {
   // Skip "node" and script path, handle "patch" subcommand
   const args = process.argv.slice(2);
 
+  // Check for version flag at top level
+  if (args.includes("--version") || args.includes("-v")) {
+    console.log(`claude-farmer v${getVersion()}`);
+    process.exit(0);
+  }
+
   // Check for subcommand
   if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
     printUsage();
@@ -110,6 +140,9 @@ async function main(): Promise<void> {
 
   // Parse remaining arguments
   const options = parseArgs(args.slice(1));
+  if (!options) {
+    process.exit(1);
+  }
 
   console.log(`claude-farmer: Starting patch on ${options.workingDir}`);
   if (options.once) console.log("  Mode: single iteration");

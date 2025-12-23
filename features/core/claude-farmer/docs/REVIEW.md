@@ -1,52 +1,52 @@
-Web search unavailable. Proceeding with analysis based on code review.
+Web search unavailable. Proceeding with code analysis.
 
 ```markdown
 # Review
 
 ## Summary
-Well-structured implementation; previous high-priority items resolved. Path validation now implemented. Minor improvements remain.
+CLI implemented; all major goals met. Minor refinements remain.
 
 ## Goal Alignment
 - [x] Review task: reads GOAL, source → produces REVIEW.md
-- [x] Develop task: reads GOAL, REVIEW, source → produces code edits  
+- [x] Develop task: reads GOAL, REVIEW, source → produces code edits
 - [x] Patch command: orchestrates review → develop → commit loop
 - [x] Tasks not exposed: only commands exported in index.ts
 - [x] Logging with rotation (100 files max)
 - [x] Real-time logging via appendFile
 - [x] Exponential backoff with reset on edits
 - [x] Graceful shutdown handling (SIGINT/SIGTERM)
-- [x] Path validation in develop task (added per previous review)
+- [x] Path validation in develop task
 - [x] --dry-run option implemented
-- [ ] CLI not yet implemented (patch function exists but no CLI wrapper)
+- [x] CLI entry point created (`cli.ts`)
+- [ ] package.json `bin` field not configured for npm global install
 
 ## Suggestions
 
 ### High Priority
-1. **Create CLI entry point** (`cli.ts` or `bin/claude-farmer.ts`)
-   - GOAL specifies: `claude-farmer patch [working_directory] [options]`
-   - Current: only exports `patch()` function, no CLI
-   - Need: argument parsing, `--once`, `--ultrathink`, `--dry-run` flags
+1. **Add `bin` field to package.json** for npm global install
+   - CLI exists but won't work as `claude-farmer patch` without bin config
+   - Need: `"bin": { "claude-farmer": "./cli.js" }` in package.json
 
 ### Medium Priority
-1. **Add Windows path separator handling in path validation** (`tasks/develop/index.ts:30`)
-   - Uses hardcoded `/` separator: `resolvedPath.startsWith(resolvedWorkingDir + "/")`
-   - Should use `path.sep` or handle both separators for cross-platform
+1. **Missing git scripts** (`scripts/git-patch-checkout.sh`, `scripts/git-patch-complete.sh`)
+   - `commands/patch/index.ts:78` references `scriptsDir` but no scripts exist in codebase
+   - These need to be created or their absence will cause runtime errors
 
-2. **Handle git uncommitted changes warning** (mentioned in previous review as resolved, but not found in code)
-   - `git-patch-checkout.sh` should warn if uncommitted changes exist
-   - Need to verify script implementation
+2. **CLI doesn't pass `cwd` to ClaudeCodeAI correctly** (`cli.ts:101-104`)
+   - Creates AI with `cwd: options.workingDir` but then passes `options.workingDir` to `patch()` separately
+   - When `workingDir` differs from `process.cwd()`, Claude Code spawns in wrong directory
+   - Fix: Ensure AI `cwd` matches the working directory being patched
 
-3. **E2E test coverage gap**
-   - `claude-e2e.test.ts` tests AI but not full patch workflow
-   - Add test that runs `patch()` with real `claude` CLI (skip if unavailable)
+3. **Develop task logs filtered edits but returns them** (`tasks/develop/index.ts:52-67`)
+   - Path validation silently filters unsafe paths without logging
+   - Should log when paths are rejected for security transparency
 
 ### Low Priority
-1. **Consider `--max-iterations` option**
-   - Currently loops forever until stopped
-   - May help for CI/CD or scheduled runs
+1. **Consider adding `--version` flag to CLI**
+   - Standard CLI practice for debugging and support
 
 ## Next Steps
-1. Create CLI entry point with argument parsing
-2. Fix Windows path separator in path validation
-3. Verify/implement git uncommitted changes warning in shell script
+1. Create git scripts or document their expected location
+2. Add bin field to package.json
+3. Add logging when develop task rejects unsafe paths
 ```
