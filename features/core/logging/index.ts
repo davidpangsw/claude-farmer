@@ -1,11 +1,13 @@
 /**
  * Logging utility for claude-farmer iterations.
  * Uses pino with sync destination for real-time logging.
+ * Uses del library for log file cleanup per GOAL.md.
  */
 
 import pino from "pino";
+import { deleteSync } from "del";
 import { globSync } from "glob";
-import { mkdirSync, unlinkSync, statSync } from "fs";
+import { mkdirSync, statSync, existsSync } from "fs";
 import { join } from "path";
 
 const MAX_LOG_FILES = 30;
@@ -13,27 +15,29 @@ const LOGS_DIR = "claude-farmer/logs";
 
 /**
  * Clean up old log files, keeping only the most recent ones.
- * Uses glob library for file discovery.
+ * Uses glob for file discovery and del library for safe deletion.
  */
 function cleanupOldLogs(logsDir: string, maxFiles: number): void {
   try {
-    const files = globSync("*.log", { cwd: logsDir })
-      .map(f => ({
-        name: f,
-        time: statSync(join(logsDir, f)).mtimeMs,
-      }))
-      .sort((a, b) => b.time - a.time)
-      .slice(maxFiles);
+    if (!existsSync(logsDir)) return;
 
-    for (const file of files) {
-      try {
-        unlinkSync(join(logsDir, file.name));
-      } catch {
-        // Ignore cleanup errors
-      }
+    const files = globSync("*.log", { cwd: logsDir })
+      .map(f => {
+        const fullPath = join(logsDir, f);
+        return {
+          path: fullPath,
+          time: statSync(fullPath).mtimeMs,
+        };
+      })
+      .sort((a, b) => b.time - a.time);
+
+    const toDelete = files.slice(maxFiles).map(f => f.path);
+
+    if (toDelete.length > 0) {
+      deleteSync(toDelete, { force: true });
     }
   } catch {
-    // Ignore if directory doesn't exist or other errors
+    // Ignore cleanup errors
   }
 }
 
@@ -59,7 +63,7 @@ export class IterationLogger {
     const logsDir = join(workingDirPath, LOGS_DIR);
     mkdirSync(logsDir, { recursive: true });
 
-    // Clean up old log files using glob library
+    // Clean up old log files using del library
     cleanupOldLogs(logsDir, MAX_LOG_FILES);
 
     // Generate filename with OS local time

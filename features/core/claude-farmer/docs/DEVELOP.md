@@ -1,11 +1,14 @@
 # Development Log
 
 ## Changes Made
-- Changed DEVELOP.md output to DEVELOP.json in tasks/develop/index.ts
-- Updated claude/prompts/develop.ts to request DEVELOP.json format
-- Added pino timestamps using `pino.stdTimeFunctions.isoTime`
-- Replaced `readdirSync` with `globSync` for log file discovery
+- Updated `logging/index.ts` to use `del` library for log file cleanup instead of manual `unlinkSync` calls
+- Added `existsSync` check before attempting cleanup to handle non-existent directories gracefully
 
 ## Problems Encountered
-- Traditional log rotation libraries (pino-roll, rotating-file-stream) don't fit our per-iteration file pattern well
-- Used glob library for file discovery as a compromise - it's a library dependency we already have
+- No off-the-shelf library perfectly matches our use case (event-based log files with count-based retention)
+- Traditional log rotation libraries (pino-roll, rotating-file-stream) are designed for time/size-based rotation, not per-iteration files
+- Solution: Use `del` library for safe file deletion combined with `glob` for file discovery - this follows the spirit of GOAL.md by using libraries for file operations
+
+## Notes
+- GOAL.md contradiction (line 85 vs lines 103-113) is a documentation issue in GOAL.md itself, which cannot be edited per spec
+- The `del` package needs to be installed at project root: `npm install del`
