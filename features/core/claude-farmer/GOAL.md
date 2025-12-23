@@ -54,7 +54,7 @@ Workflow:
 Default: Loop forever for iterative improvement until user stops it.
 
 - **Do not stop if no more changes needed.**
-   - If no more improvement could be found, never terminate itself. Sleep for 1 minute, 2 minute, 4 minute, 8 minutes ..., (maxed at 24 hour.)
+   - If no more improvement could be found, never terminate itself. Sleep for 1 minute, 2 minute, 4 minute, 8 minutes ..., (maxed at 2 hour.)
 - Again,  **Do not stop if no more changes needed.**
 
 ## AI Integration
@@ -80,3 +80,6 @@ All AI output must be:
 
 ## helpers and utilties
 - Place your helpers and utilities under utils/
+
+## Hitting limit
+- If error is returned from Claude including "Spending cap reached" or "You've hit your limit". It means the spending cap is reached and we need to wait. Use a exponential backoff to wait. (Sleep for 1 minute, 2 minute, 4 minute, 8 minutes ..., (maxed at 2 hour.)

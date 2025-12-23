@@ -19,7 +19,7 @@ import type { AIModel } from "../../types.js";
 /** Minimum sleep duration: 1 minute */
 const MIN_SLEEP_MS = 60 * 1000;
 /** Maximum sleep duration: 24 hours */
-const MAX_SLEEP_MS = 24 * 60 * 60 * 1000;
+const MAX_SLEEP_MS = 2 * 60 * 60 * 1000;
 
 export interface PatchOptions {
   /** Run once instead of looping */
@@ -103,12 +103,16 @@ export async function patch(
       const err = error instanceof Error ? error : new Error(String(error));
       await logger.logError(err.message);
       await logger.finalize();
-      if (err.message.indexOf("Spending cap reached") !== -1) {
-        const sleepInMins = 5;
-        await logger.log(`INFO: Spending cap reached, sleep for ${sleepInMins} minutes`);
+      if (err.message.indexOf("Spending cap reached") !== -1 || err.message.indexOf("You've hit your limit") !== -1) {
+        await logger.log(`INFO: Spending cap reached.`);
+
+        // Exponential backoff: sleep and retry
+        await logger.logSleep(sleepMs);
         await logger.finalize();
-        sleep(sleepInMins * 60 * 1000);
-      } else { 
+        await sleep(sleepMs);
+        sleepMs = Math.min(sleepMs * 2, MAX_SLEEP_MS);
+        continue;
+      } else {
         throw error;
       }
     }
