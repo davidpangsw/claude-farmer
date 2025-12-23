@@ -132,6 +132,9 @@ export async function runClaudeCode(
       stdio: ["pipe", "pipe", "pipe"],
     });
 
+    // Close stdin immediately - we pass prompt via args, not stdin
+    proc.stdin.end();
+
     let stdout = "";
     let stderr = "";
     let killed = false;
