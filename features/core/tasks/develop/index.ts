@@ -5,21 +5,11 @@
  * and the relevant source code to implement requirements and address feedback.
  */
 
-import type { DevelopResult, AIModel } from "../../types.js";
+import type { DevelopResult, AIModel, FileEdit } from "../../types.js";
 import { gatherWorkingDirContext } from "../../context.js";
+import { isPathWithinWorkingDir } from "../../utils/index.js";
 import { writeFile, mkdir } from "fs/promises";
-import { dirname, basename, resolve, sep } from "path";
-
-/**
- * Validates that a file path is within the working directory.
- * Prevents path traversal attacks from AI-generated paths.
- */
-function isPathWithinWorkingDir(filePath: string, workingDirPath: string): boolean {
-  const resolvedPath = resolve(workingDirPath, filePath);
-  const resolvedWorkingDir = resolve(workingDirPath);
-  return resolvedPath === resolvedWorkingDir ||
-    resolvedPath.startsWith(resolvedWorkingDir + sep);
-}
+import { dirname, basename, resolve, join } from "path";
 
 /**
  * Develops a working directory by generating and applying code edits.
@@ -35,25 +25,53 @@ export async function develop(
   const edits = await ai.generateEdits(context);
 
   // Filter and apply edits
-  const safeEdits = [];
+  const safeEdits: FileEdit[] = [];
+  const warnings: string[] = [];
+  let hasDevelopJson = false;
+
   for (const edit of edits) {
     // Validate path is within working directory
     if (!isPathWithinWorkingDir(edit.path, workingDirPath)) {
-      console.warn(`[develop] Path traversal blocked: ${edit.path} is outside working directory`);
+      warnings.push(`Path traversal blocked: ${edit.path} is outside working directory`);
       continue;
     }
 
-    safeEdits.push(edit);
+    // Resolve to absolute path
+    const absolutePath = resolve(workingDirPath, edit.path);
+    safeEdits.push({ ...edit, path: absolutePath });
+
+    // Track if DEVELOP.json is included
+    if (edit.path.endsWith("DEVELOP.json")) {
+      hasDevelopJson = true;
+    }
 
     // Ensure parent directory exists
-    const dir = dirname(edit.path);
+    const dir = dirname(absolutePath);
     await mkdir(dir, { recursive: true });
 
-    await writeFile(edit.path, edit.content, "utf-8");
+    await writeFile(absolutePath, edit.content, "utf-8");
+  }
+
+  // Generate fallback DEVELOP.json if AI didn't include one
+  if (!hasDevelopJson && safeEdits.length > 0) {
+    const developJsonPath = join(workingDirPath, "claude-farmer", "docs", "DEVELOP.json");
+    const editsSummary = safeEdits.map(e => ({
+      path: e.path,
+      size: e.content.length,
+    }));
+    const content = JSON.stringify({
+      changes: editsSummary,
+      problems: [],
+    }, null, 2);
+
+    await mkdir(dirname(developJsonPath), { recursive: true });
+    await writeFile(developJsonPath, content, "utf-8");
+    safeEdits.push({ path: developJsonPath, content });
   }
 
   return {
     workingDirName: basename(workingDirPath),
     edits: safeEdits,
+    warnings: warnings.length > 0 ? warnings : undefined,
   };
 }

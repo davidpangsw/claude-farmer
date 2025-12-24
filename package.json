@@ -27,6 +27,8 @@
     "vitest": "^2.1.0"
   },
   "dependencies": {
-    "glob": "^13.0.0"
+    "glob": "^13.0.0",
+    "pino": "^10.1.0",
+    "rotating-file-stream": "^3.2.7"
   }
 }

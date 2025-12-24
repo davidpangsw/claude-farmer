@@ -6,25 +6,27 @@
  * 2. Perform Develop
  * 3. Commit with meaningful message
  *
- * Loop forever by default. Uses exponential backoff (1→2→4→8 min... max 24h) when no changes.
+ * Loop forever by default. Uses exponential backoff (1→2→4→8 min... max 2h) when no changes.
  */
 
-import { execSync } from "child_process";
-import { basename } from "path";
+import { spawnSync } from "child_process";
+import { basename, relative } from "path";
 import { review } from "../../tasks/review/index.js";
 import { develop } from "../../tasks/develop/index.js";
-import { createIterationLogger } from "../../logging/index.js";
+import { createIterationLogger, IterationLogger } from "../../logging/index.js";
+import {
+  MIN_SLEEP_MS,
+  defaultSleep,
+  isRateLimitError,
+  performBackoffSleep,
+} from "../../utils/index.js";
+import { ClaudeCodeAI } from "../../claude/index.js";
 import type { AIModel } from "../../types.js";
 
-/** Minimum sleep duration: 1 minute */
-const MIN_SLEEP_MS = 60 * 1000;
-/** Maximum sleep duration: 24 hours */
-const MAX_SLEEP_MS = 24 * 60 * 60 * 1000;
-
 export interface PatchOptions {
-  /** Run once instead of looping */
+  /** Run once instead of looping (default: false) */
   once?: boolean;
-  /** Enable ultrathink mode for AI (extended thinking) */
+  /** Enable ultrathink mode (default: false) */
   ultrathink?: boolean;
   /** @internal For testing - custom sleep function */
   _sleepFn?: (ms: number) => Promise<void>;
@@ -36,76 +38,147 @@ export interface PatchResult {
 }
 
 /**
- * Default sleep function using setTimeout.
- */
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
  * Executes the patch command for a working directory.
+ * @param workingDirPath - Path to the working directory
+ * @param aiOrOptions - Either an AIModel instance (for testing) or PatchOptions
+ * @param options - PatchOptions (only used if second param is AIModel)
  */
 export async function patch(
   workingDirPath: string,
-  ai: AIModel,
-  options: PatchOptions = {}
+  aiOrOptions?: AIModel | PatchOptions,
+  options?: PatchOptions
 ): Promise<PatchResult> {
+  // Handle flexible signature: patch(path, options) or patch(path, ai, options)
+  let ai: AIModel;
+  let opts: PatchOptions;
+
+  if (aiOrOptions && typeof aiOrOptions === "object" && "generateReview" in aiOrOptions) {
+    // Second param is AIModel
+    ai = aiOrOptions;
+    opts = options ?? {};
+  } else {
+    // Second param is options (or undefined)
+    opts = (aiOrOptions as PatchOptions) ?? {};
+    ai = new ClaudeCodeAI({
+      cwd: workingDirPath,
+      ultrathink: opts.ultrathink ?? false,
+    });
+  }
+
   let iterations = 0;
   let sleepMs = MIN_SLEEP_MS;
-  const sleep = options._sleepFn ?? defaultSleep;
+  const sleep = opts._sleepFn ?? defaultSleep;
+  let currentLogger: IterationLogger | null = null;
+  let shuttingDown = false;
 
-  do {
-    iterations++;
-    const logger = createIterationLogger(workingDirPath, iterations);
-
-    try {
-      // Run review first, then develop based on review feedback
-      const reviewResult = await review(workingDirPath, ai);
-      await logger.logReview(reviewResult.reviewPath, reviewResult.content.length);
-
-      const developResult = await develop(workingDirPath, ai);
-      await logger.logDevelop(developResult.edits);
-
-      // Commit changes or handle no-edits case
-      if (developResult.edits.length > 0) {
-        // Build meaningful commit message
-        const fileCount = developResult.edits.length;
-        const fileNames = developResult.edits
-          .map(e => basename(e.path))
-          .slice(0, 3)
-          .join(", ");
-        const suffix = fileCount > 3 ? ` and ${fileCount - 3} more` : "";
-        const commitMessage = `claude-farmer: updated ${fileNames}${suffix}`;
-
-        // Git add and commit
-        execSync(`git add -A && git commit -m "${commitMessage.replace(/"/g, '\\"')}"`, {
-          cwd: workingDirPath,
-          encoding: "utf-8",
-          stdio: ["pipe", "pipe", "pipe"],
-        });
-        await logger.logCommit(commitMessage);
-
-        // Reset backoff on successful edits
-        sleepMs = MIN_SLEEP_MS;
-      } else {
-        await logger.logNoChanges();
-
-        // Exponential backoff: sleep and retry
-        await logger.logSleep(sleepMs);
-        await logger.finalize();
-        await sleep(sleepMs);
-        sleepMs = Math.min(sleepMs * 2, MAX_SLEEP_MS);
-        continue;
-      }
-
-      await logger.finalize();
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      await logger.logError(err.message);
-      await logger.finalize();
-      throw error;
+  // Graceful shutdown handler with flag-based approach
+  const shutdownHandler = () => {
+    if (shuttingDown) {
+      // Second signal - force exit
+      process.exit(1);
     }
-  } while (!options.once);
+    shuttingDown = true;
+    if (currentLogger) {
+      currentLogger.error("Received shutdown signal");
+      currentLogger.finalize();
+      currentLogger = null;
+    }
+  };
+
+  process.on("SIGINT", shutdownHandler);
+  process.on("SIGTERM", shutdownHandler);
+
+  try {
+    do {
+      if (shuttingDown) break;
+
+      iterations++;
+      const logger = createIterationLogger(workingDirPath, iterations);
+      currentLogger = logger;
+
+      try {
+        // Run review first, then develop based on review feedback
+        const reviewResult = await review(workingDirPath, ai);
+        logger.log(`Review completed: ${reviewResult.reviewPath} (${reviewResult.content.length} chars)`);
+
+        if (shuttingDown) break;
+
+        const developResult = await develop(workingDirPath, ai);
+        logger.log(`Develop completed: ${developResult.edits.length} file(s) edited`);
+        for (const edit of developResult.edits) {
+          logger.log(`  - ${edit.path} (${edit.content.length} chars)`);
+        }
+
+        // Log security warnings if any
+        if (developResult.warnings && developResult.warnings.length > 0) {
+          for (const warning of developResult.warnings) {
+            logger.error(`[SECURITY] ${warning}`);
+          }
+        }
+
+        // Commit changes or handle no-edits case
+        if (developResult.edits.length > 0) {
+          // Build meaningful commit message using relative paths for uniqueness
+          const fileCount = developResult.edits.length;
+          const fileNames = developResult.edits
+            .map(e => relative(workingDirPath, e.path))
+            .slice(0, 3)
+            .join(", ");
+          const suffix = fileCount > 3 ? ` and ${fileCount - 3} more` : "";
+          const commitMessage = `claude-farmer: updated ${fileNames}${suffix}`;
+
+          // Git add using spawnSync with error checking
+          const addResult = spawnSync("git", ["add", "-A"], {
+            cwd: workingDirPath,
+            encoding: "utf-8",
+            stdio: ["pipe", "pipe", "pipe"],
+          });
+
+          if (addResult.status !== 0) {
+            throw new Error(`Git add failed: ${addResult.stderr || addResult.stdout}`);
+          }
+
+          const commitResult = spawnSync("git", ["commit", "-m", commitMessage], {
+            cwd: workingDirPath,
+            encoding: "utf-8",
+            stdio: ["pipe", "pipe", "pipe"],
+          });
+
+          if (commitResult.status !== 0) {
+            throw new Error(`Git commit failed: ${commitResult.stderr || commitResult.stdout}`);
+          }
+
+          logger.log(`Committed: ${commitMessage}`);
+
+          // Reset backoff on successful edits
+          sleepMs = MIN_SLEEP_MS;
+          logger.finalize();
+          currentLogger = null;
+        } else {
+          // No changes - apply backoff
+          sleepMs = await performBackoffSleep(logger, sleepMs, "No changes to commit", sleep);
+          currentLogger = null;
+          continue;
+        }
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        logger.error(err.message);
+        if (isRateLimitError(err.message)) {
+          sleepMs = await performBackoffSleep(logger, sleepMs, "Spending cap reached", sleep);
+          currentLogger = null;
+          continue;
+        } else {
+          logger.finalize();
+          currentLogger = null;
+          throw error;
+        }
+      }
+    } while (!opts.once && !shuttingDown);
+  } finally {
+    // Clean up signal handlers
+    process.off("SIGINT", shutdownHandler);
+    process.off("SIGTERM", shutdownHandler);
+  }
 
   return {
     workingDirName: basename(workingDirPath),

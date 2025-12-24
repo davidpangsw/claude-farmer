@@ -3,7 +3,7 @@
  */
 
 import type { WorkingDirContext, FileContent } from "./types.js";
-import { readFile, access } from "fs/promises";
+import { readFile, access, stat } from "fs/promises";
 import { glob } from "glob";
 import { join, basename, sep } from "path";
 
@@ -18,6 +18,21 @@ const DEFAULT_SOURCE_PATTERNS = [
   "**/*.json",
   "**/*.md",
 ];
+
+/**
+ * Patterns to ignore when gathering source files.
+ */
+const IGNORE_PATTERNS = [
+  "**/node_modules/**",
+  "**/package-lock.json",
+  "**/*.lock",
+  ".git/**",
+];
+
+/**
+ * Maximum file size in bytes (100KB).
+ */
+const MAX_FILE_SIZE = 100 * 1024;
 
 /**
  * Gathers the context needed for reviewing or developing a working directory.
@@ -50,7 +65,11 @@ export async function gatherWorkingDirContext(
   const seenPaths = new Set<string>();
 
   for (const pattern of patterns) {
-    const files = await glob(`${workingDirPath}/${pattern}`, { nodir: true, absolute: true });
+    const files = await glob(`${workingDirPath}/${pattern}`, {
+      nodir: true,
+      absolute: true,
+      ignore: IGNORE_PATTERNS.map(p => `${workingDirPath}/${p}`),
+    });
     for (const filePath of files) {
       // Skip files in or under the claude-farmer directory
       if (filePath.startsWith(claudeFarmerPath + sep) || filePath === claudeFarmerPath) {
@@ -61,6 +80,12 @@ export async function gatherWorkingDirContext(
         continue;
       }
       seenPaths.add(filePath);
+
+      // Check file size before reading
+      const fileStat = await stat(filePath);
+      if (fileStat.size > MAX_FILE_SIZE) {
+        continue;
+      }
 
       const content = await readFile(filePath, "utf-8");
       sourceFiles.push({ path: filePath, content });
