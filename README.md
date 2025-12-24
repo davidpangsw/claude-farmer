@@ -8,11 +8,17 @@ Farm your code with Claude tokens overnight.
 git clone https://github.com/davidpangsw/claude-farmer.git
 cd claude-farmer
 npm install && npm run build
+chmod +x ./dist/bin/claude-farmer.js
 ```
 
-Then either:
-- Run directly: `./bin/claude-farmer.js`
-- Add to PATH: `export PATH="$PATH:/path/to/claude-farmer/bin"`
+- You can run directly with `./dist/bin/claude-farmer.js`, but it is better to create a symlink (Remember to have your bin in `PATH`):
+```bash
+ln -s "$(pwd)/dist/bin/claude-farmer.js" ~/.local/bin/claude-farmer
+
+# you may set your path in .zshrc (Or other file depending on your OS)
+# if you didn't
+export PATH="$PATH:~/.local/bin"`
+```
 
 ## Usage
 
